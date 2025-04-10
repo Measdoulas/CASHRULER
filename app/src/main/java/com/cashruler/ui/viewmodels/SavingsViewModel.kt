@@ -75,7 +75,13 @@ class SavingsViewModel @Inject constructor(
      * Met à jour l'état du formulaire
      */
     fun updateFormState(update: (SavingsFormState) -> SavingsFormState) {
-        _uiState.update { it.copy(formState = update(it.formState)) }
+        _uiState.update { currentState ->
+            val newFormState = update(currentState.formState)
+            val validationErrors = validateFormState(newFormState)
+            currentState.copy(
+                formState = newFormState,
+                validationErrors = validationErrors)
+        }
     }
 
     /**
@@ -84,26 +90,12 @@ class SavingsViewModel @Inject constructor(
     fun addProject() {
         viewModelScope.launch {
             _isLoading.value = true
-            try {
-                val project = createProjectFromForm()
-                when (val result = savingsRepository.validateProject(project)) {
-                    is ValidationResult.Success -> {
-                        savingsRepository.addProject(project)
-                        _uiState.update { it.copy(
-                            formState = SavingsFormState(),
-                            isSuccess = true
-                        ) }
-                    }
-                    is ValidationResult.Error -> {
-                        _error.emit(result.errors.joinToString("\n"))
-                    }
-                }
-            } catch (e: Exception) {
-                _error.emit("Erreur lors de l'ajout du projet: ${e.message}")
-            } finally {
-                _isLoading.value = false
-            }
-        }
+            val project = createProjectFromForm()
+            handleProject(project)
+        }.invokeOnCompletion { _isLoading.value = false }
+    }
+    private fun isFormValid(): Boolean {
+        return _uiState.value.validationErrors.isEmpty()
     }
 
     /**
@@ -112,28 +104,62 @@ class SavingsViewModel @Inject constructor(
     fun updateProject(id: Long) {
         viewModelScope.launch {
             _isLoading.value = true
-            try {
-                val project = createProjectFromForm().copy(id = id)
-                when (val result = savingsRepository.validateProject(project)) {
-                    is ValidationResult.Success -> {
-                        savingsRepository.updateProject(project)
-                        _uiState.update { it.copy(
-                            formState = SavingsFormState(),
-                            isSuccess = true
-                        ) }
-                    }
-                    is ValidationResult.Error -> {
-                        _error.emit(result.errors.joinToString("\n"))
-                    }
-                }
-            } catch (e: Exception) {
-                _error.emit("Erreur lors de la mise à jour du projet: ${e.message}")
-            } finally {
-                _isLoading.value = false
+            val project = createProjectFromForm().copy(id = id)
+            handleProject(project, id)
+        }.invokeOnCompletion { _isLoading.value = false }
+    }
+
+    /**
+     * Validate the form state
+     */
+    private fun validateFormState(formState: SavingsFormState): Map<String, String> {
+        val errors = mutableMapOf<String, String>()
+
+        if (formState.title.isBlank()) {
+            errors["title"] = "Le titre est requis"
+        }
+
+        if (formState.description.isBlank()) {
+            errors["description"] = "La description est requise"
+        }
+
+        if (formState.targetAmount <= 0) {
+            errors["targetAmount"] = "Le montant cible doit être supérieur à 0"
+        }
+
+        if (formState.periodicAmount != null && formState.periodicAmount <= 0) {
+            errors["periodicAmount"] = "Le montant périodique doit être supérieur à 0"
+        }
+
+        if (formState.savingFrequency != null && formState.savingFrequency <= 0) {
+            errors["savingFrequency"] = "La fréquence d'épargne doit être supérieure à 0"
+        }
+
+        return errors
+    }
+
+    private suspend fun handleProject(project: SavingsProject, id: Long? = null) {
+        if (!isFormValid()) {
+            _error.emit("Veuillez corriger les erreurs du formulaire")
+            return
+        }
+
+        val projectToHandle = if (id != null) project.copy(id = id) else project
+
+        try {
+            if (id != null) {
+                savingsRepository.updateProject(projectToHandle)
+            } else {
+                savingsRepository.addProject(projectToHandle)
             }
+            _uiState.update { it.copy(formState = SavingsFormState(), isSuccess = true, validationErrors = emptyMap()) }
+        } catch (e: Exception) {
+            val action = if (id != null) "mettre à jour" else "ajouter"
+            _error.emit("Erreur lors de l'action de $action le projet: ${e.message}")
         }
     }
 
+            try {
     /**
      * Ajoute un montant à un projet
      */

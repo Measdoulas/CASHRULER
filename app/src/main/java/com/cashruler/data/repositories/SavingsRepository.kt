@@ -185,4 +185,17 @@ class SavingsRepository @Inject constructor(
         return project.currentAmount >= project.targetAmount ||
                (project.targetDate != null && project.targetDate.before(Date()))
     }
+
+    suspend fun getAllProjectsList(): List<SavingsProject> = withContext(dispatcher) {
+        savingsDao.getAllProjects().first()
+    }
+
+    /**
+     * Calcule la prochaine occurrence d'un projet d'épargne périodique
+     */
+    fun calculateNextOccurrence(project: SavingsProject): Date? {
+        if (project.periodicAmount == null || project.savingFrequency == null) return null
+
+        return Date(System.currentTimeMillis() + (project.savingFrequency * 24 * 60 * 60 * 1000))
+    }
 }

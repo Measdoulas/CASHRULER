@@ -133,7 +133,16 @@ class IncomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             _isLoading.value = true
-            try {
+            val formState = _uiState.value.formState
+            val income = Income(
+                amount = formState.amount,
+                description = formState.description,
+                type = formState.type,
+                date = formState.date,
+                isRecurring = formState.isRecurring,
+                recurringFrequency = formState.recurringFrequency,
+                isTaxable = formState.isTaxable,
+                taxRate = formState.taxRate,
                 val income = createIncomeFromForm()
                 when (val result = incomeRepository.validateIncome(income)) {
                     is ValidationResult.Success -> {
@@ -152,8 +161,7 @@ class IncomeViewModel @Inject constructor(
                     is ValidationResult.Error -> {
                         _error.emit(result.errors.joinToString("\n"))
                     }
-                }
-            } catch (e: Exception) {
+            }.invokeOnCompletion {
                 _error.emit("Erreur lors de l'ajout du revenu: ${e.message}")
             } finally {
                 _isLoading.value = false
@@ -170,8 +178,7 @@ class IncomeViewModel @Inject constructor(
                 _error.emit("Veuillez corriger les erreurs du formulaire")
             }
             return
-        }
-
+        }y {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -193,8 +200,7 @@ class IncomeViewModel @Inject constructor(
                     is ValidationResult.Error -> {
                         _error.emit(result.errors.joinToString("\n"))
                     }
-                }
-            } catch (e: Exception) {
+            }.invokeOnCompletion {
                 _error.emit("Erreur lors de la mise à jour du revenu: ${e.message}")
             } finally {
                 _isLoading.value = false
@@ -253,21 +259,20 @@ class IncomeViewModel @Inject constructor(
         ) }
     }
 
-    private fun createIncomeFromForm(): Income {
-        return with(_uiState.value.formState) {
-            Income(
-                amount = amount,
-                description = description,
-                type = type,
-                date = date,
-                isRecurring = isRecurring,
-                recurringFrequency = recurringFrequency,
-                isTaxable = isTaxable,
-                taxRate = taxRate,
-                notes = notes.takeIf { it.isNotBlank() },
-                attachmentUri = attachmentUri
-            )
+    private suspend fun handleIncome(income: Income, id: Long? = null) {
+        val incomeToHandle = if (id != null) income.copy(id = id) else income
+        when (val result = incomeRepository.validateIncome(incomeToHandle)) {
+            is ValidationResult.Success -> {
+                val updatedIncome = incomeToHandle.copy(nextOccurrence = if (incomeToHandle.isRecurring) incomeRepository.calculateNextOccurrence(incomeToHandle) else null)
+                if (id != null) incomeRepository.updateIncome(updatedIncome) else incomeRepository.addIncome(updatedIncome)
+                _uiState.update { it.copy(formState = IncomeFormState(), isSuccess = true, validationErrors = emptyMap()) }
+            }
+            is ValidationResult.Error -> _error.emit(result.errors.joinToString("\n"))
         }
+    }
+private fun createIncomeFromForm(): Income {
+    val formState = _uiState.value.formState
+    return Income(amount = formState.amount, description = formState.description, type = formState.type, date = formState.date, isRecurring = formState.isRecurring, recurringFrequency = formState.recurringFrequency, isTaxable = formState.isTaxable, taxRate = formState.taxRate, notes = formState.notes.takeIf { it.isNotBlank() }, attachmentUri = formState.attachmentUri)
     }
 }
 

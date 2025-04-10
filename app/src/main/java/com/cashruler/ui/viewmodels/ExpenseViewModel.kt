@@ -118,30 +118,20 @@ class ExpenseViewModel @Inject constructor(
 
         viewModelScope.launch {
             _isLoading.value = true
-            try {
-                val expense = createExpenseFromForm()
-                when (val result = expenseRepository.validateExpense(expense)) {
-                    is ValidationResult.Success -> {
-                        val expenseId = expenseRepository.addExpense(expense)
-                        expense.spendingLimitId?.let { limitId ->
-                            spendingLimitRepository.addToSpentAmount(limitId, expense.amount)
-                        }
-                        _uiState.update { it.copy(
-                            formState = ExpenseFormState(),
-                            isSuccess = true,
-                            validationErrors = emptyMap()
-                        ) }
-                    }
-                    is ValidationResult.Error -> {
-                        _error.emit(result.errors.joinToString("\n"))
-                    }
-                }
-            } catch (e: Exception) {
-                _error.emit("Erreur lors de l'ajout de la dépense: ${e.message}")
-            } finally {
-                _isLoading.value = false
-            }
-        }
+            val formState = _uiState.value.formState
+            val expense = Expense(
+                amount = formState.amount,
+                description = formState.description,
+                category = formState.category,
+                date = formState.date,
+                isRecurring = formState.isRecurring,
+                recurringFrequency = formState.recurringFrequency,
+                notes = formState.notes.takeIf { it.isNotBlank() },
+                attachmentUri = formState.attachmentUri,
+                spendingLimitId = formState.spendingLimitId
+            )
+            handleExpense(expense)
+        }.invokeOnCompletion { _isLoading.value = false }
     }
 
     /**
@@ -157,27 +147,21 @@ class ExpenseViewModel @Inject constructor(
 
         viewModelScope.launch {
             _isLoading.value = true
-            try {
-                val expense = createExpenseFromForm().copy(id = id)
-                when (val result = expenseRepository.validateExpense(expense)) {
-                    is ValidationResult.Success -> {
-                        expenseRepository.updateExpense(expense)
-                        _uiState.update { it.copy(
-                            formState = ExpenseFormState(),
-                            isSuccess = true,
-                            validationErrors = emptyMap()
-                        ) }
-                    }
-                    is ValidationResult.Error -> {
-                        _error.emit(result.errors.joinToString("\n"))
-                    }
-                }
-            } catch (e: Exception) {
-                _error.emit("Erreur lors de la mise à jour de la dépense: ${e.message}")
-            } finally {
-                _isLoading.value = false
-            }
-        }
+            val formState = _uiState.value.formState
+            val expense = Expense(
+                id = id,
+                amount = formState.amount,
+                description = formState.description,
+                category = formState.category,
+                date = formState.date,
+                isRecurring = formState.isRecurring,
+                recurringFrequency = formState.recurringFrequency,
+                notes = formState.notes.takeIf { it.isNotBlank() },
+                attachmentUri = formState.attachmentUri,
+                spendingLimitId = formState.spendingLimitId
+            )
+            handleExpense(expense, id)
+        }.invokeOnCompletion { _isLoading.value = false }
     }
 
     /**
@@ -221,6 +205,40 @@ class ExpenseViewModel @Inject constructor(
                 }
         }
     }
+
+    private suspend fun handleExpense(expense: Expense, id: Long? = null) = try {
+        when (val result = expenseRepository.validateExpense(expense)) {
+            is ValidationResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            formState = ExpenseFormState(),
+                            isSuccess = true,
+                            validationErrors = emptyMap()
+                        )
+                    }
+                    if (id != null) {
+                        expenseRepository.updateExpense(expense)
+                    } else {
+                        val expenseId = expenseRepository.addExpense(expense)
+                        expense.spendingLimitId?.let { limitId ->
+                            spendingLimitRepository.addToSpentAmount(limitId, expense.amount)
+                        }
+                    }
+                }
+                is ValidationResult.Error -> {
+                    _error.emit(result.errors.joinToString("\n"))
+                }
+            }
+        } catch (e: Exception) {
+            _error.emit("Erreur lors de la mise à jour/ajout de la dépense: ${e.message}")
+        }
+    }
+
+
+
+
+
+
 
     /**
      * Réinitialise le formulaire

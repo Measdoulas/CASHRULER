@@ -122,6 +122,19 @@ class ExpenseRepository @Inject constructor(
     }
 
     /**
+     * Supprime toutes les dépenses
+     */
+    suspend fun deleteAllData() = withContext(dispatcher) {
+        expenseDao.deleteAll()
+    }
+
+
+    suspend fun getAllExpensesList(): List<Expense> = withContext(dispatcher) {
+        expenseDao.getAllExpenses().first()
+    }
+
+
+    /**
      * Valide les champs d'une dépense
      */
     fun validateExpense(expense: Expense): ValidationResult {

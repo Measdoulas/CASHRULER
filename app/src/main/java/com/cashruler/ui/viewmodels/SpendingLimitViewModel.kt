@@ -68,11 +68,28 @@ class SpendingLimitViewModel @Inject constructor(
         resetExpiredPeriods()
     }
 
-    /**
+   /**
+    * Check if the form is valid
+    */
+   private fun isFormValid(): Boolean = _uiState.value.validationErrors.isEmpty()
+
+   /**
      * Met à jour l'état du formulaire
      */
     fun updateFormState(update: (SpendingLimitFormState) -> SpendingLimitFormState) {
         _uiState.update { it.copy(formState = update(it.formState)) }
+    }
+
+    /**
+     * Validate the form state
+     */
+    private fun validateFormState(formState: SpendingLimitFormState): Map<String, String> {
+        val errors = mutableMapOf<String, String>()
+        if (formState.category.isBlank()) errors["category"] = "La catégorie est requise"
+        if (formState.amount <= 0) errors["amount"] = "Le montant doit être supérieur à 0"
+        if (formState.periodInDays <= 0) errors["periodInDays"] = "La période doit être supérieure à 0 jour"
+        if (formState.warningThreshold !in 0..100) errors["warningThreshold"] = "Le seuil d'alerte doit être entre 0 et 100"
+        return errors
     }
 
     /**
@@ -82,13 +99,13 @@ class SpendingLimitViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val limit = createLimitFromForm()
+                val limit = createLimitFromForm().copy(id = id)
                 when (val result = spendingLimitRepository.validateLimit(limit)) {
                     is ValidationResult.Success -> {
-                        spendingLimitRepository.addLimit(limit)
+                        spendingLimitRepository.updateLimit(limit)
                         _uiState.update { it.copy(
-                            formState = SpendingLimitFormState(),
-                            isSuccess = true
+                           formState = SpendingLimitFormState(),
+                           isSuccess = true
                         ) }
                     }
                     is ValidationResult.Error -> {
@@ -96,7 +113,7 @@ class SpendingLimitViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                _error.emit("Erreur lors de l'ajout de la limite: ${e.message}")
+                _error.emit("Erreur lors de la mise à jour de la limite: ${e.message}")
             } finally {
                 _isLoading.value = false
             }
@@ -109,16 +126,7 @@ class SpendingLimitViewModel @Inject constructor(
     fun updateLimit(id: Long) {
         viewModelScope.launch {
             _isLoading.value = true
-            try {
-                val limit = createLimitFromForm().copy(id = id)
-                when (val result = spendingLimitRepository.validateLimit(limit)) {
-                    is ValidationResult.Success -> {
-                        spendingLimitRepository.updateLimit(limit)
-                        _uiState.update { it.copy(
-                            formState = SpendingLimitFormState(),
-                            isSuccess = true
-                        ) }
-                    }
+            handleLimit(createLimitFromForm(), id)
                     is ValidationResult.Error -> {
                         _error.emit(result.errors.joinToString("\n"))
                     }
@@ -203,9 +211,28 @@ class SpendingLimitViewModel @Inject constructor(
         ) }
     }
 
-    private fun createLimitFromForm(): SpendingLimit {
-        return with(_uiState.value.formState) {
-            SpendingLimit(
+  private suspend fun handleLimit(limit: SpendingLimit, id: Long? = null) {
+      if (!isFormValid()) {
+          _error.emit("Veuillez corriger les erreurs du formulaire")
+          return
+      }
+      try {
+          if (id != null) {
+              spendingLimitRepository.updateLimit(limit.copy(id = id))
+          } else {
+              spendingLimitRepository.addLimit(limit)
+          }
+          _uiState.update { it.copy(formState = SpendingLimitFormState(), isSuccess = true) }
+      } catch (e: Exception) {
+          val action = if (id != null) "mettre à jour" else "ajouter"
+          _error.emit("Erreur lors de l'action de $action la limite: ${e.message}")
+      } finally {
+          _isLoading.value = false
+      }
+  }
+  private fun createLimitFromForm(): SpendingLimit {
+      val formState = _uiState.value.formState
+      return SpendingLimit(
                 category = category,
                 amount = amount,
                 periodInDays = periodInDays,
@@ -216,29 +243,27 @@ class SpendingLimitViewModel @Inject constructor(
                 notes = notes.takeIf { it.isNotBlank() },
                 isActive = isActive
             )
-        }
     }
 }
 
 /**
  * État UI pour l'écran des limites
  */
-data class SpendingLimitUiState(
-    val formState: SpendingLimitFormState = SpendingLimitFormState(),
-    val isSuccess: Boolean = false
-)
+data class SpendingLimitUiState(val formState: SpendingLimitFormState = SpendingLimitFormState(),
+                                val isSuccess: Boolean = false,
+                                val validationErrors: Map<String, String> = emptyMap())
 
 /**
  * État du formulaire de limite de dépenses
  */
 data class SpendingLimitFormState(
-    val category: String = "",
-    val amount: Double = 0.0,
-    val periodInDays: Int = SpendingLimit.PERIOD_MONTHLY,
-    val currentPeriodStart: Date = Date(),
-    val currentSpent: Double = 0.0,
-    val enableNotifications: Boolean = true,
-    val warningThreshold: Int = 80,
-    val notes: String = "",
-    val isActive: Boolean = true
+   val category: String = "",
+   val amount: Double = 0.0,
+   val periodInDays: Int = SpendingLimit.PERIOD_MONTHLY,
+   val currentPeriodStart: Date = Date(),
+   val currentSpent: Double = 0.0,
+   val enableNotifications: Boolean = true,
+   val warningThreshold: Int = 80,
+   val notes: String = "",
+   val isActive: Boolean = true
 )

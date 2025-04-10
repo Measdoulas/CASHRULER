@@ -37,13 +37,10 @@ class BackupViewModel @Inject constructor(
     val success = _success.asSharedFlow()
 
     init {
-        loadBackupState()
+        loadState()
     }
 
-    /**
-     * Charge l'état des sauvegardes
-     */
-    private fun loadBackupState() {
+    private fun loadState() {
         viewModelScope.launch {
             try {
                 val settings = settingsRepository.getSettings().first()
@@ -56,13 +53,107 @@ class BackupViewModel @Inject constructor(
                         autoBackupFrequency = settings.autoBackupFrequency,
                         lastBackupDate = lastBackup,
                         availableBackups = backupFiles
-                    )
+    suspend fun delete(backupFileName: String) {
+        viewModelScope.launch {
+            try {
+                backupRepository.deleteBackup(backupFileName)
+                _backupState.update { it.copy(
+                    availableBackups = backupRepository.getBackupFiles()
+                ) }
+                _success.emit("Sauvegarde supprimée avec succès")
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de la suppression: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Exporte une sauvegarde vers un URI externe
+     */
+    suspend fun export(backupFileName: String, destinationUri: Uri) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                backupRepository.exportBackup(backupFileName, destinationUri)
+                _success.emit("Sauvegarde exportée avec succès")
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de l'exportation: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Importe une sauvegarde depuis un URI externe
+     */
+    suspend fun import(sourceUri: Uri) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                backupRepository.importBackup(sourceUri)
+                _backupState.update { it.copy(
+                    availableBackups = backupRepository.getBackupFiles()
+                ) }
+                _success.emit("Sauvegarde importée avec succès")
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de l'importation: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Configure la sauvegarde automatique
+     */
+    suspend fun configureAuto(enabled: Boolean, frequency: BackupFrequency) {
+        viewModelScope.launch {
+            try {
+                settingsRepository.setAutoBackup(enabled, frequency)
+                _backupState.update { it.copy(
+                    autoBackupEnabled = enabled,
+                    autoBackupFrequency = frequency
+                ) }
+                _success.emit("Configuration de la sauvegarde automatique mise à jour")
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de la configuration: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * État des sauvegardes
+     */
+    data class BackupState(
+        val autoBackupEnabled: Boolean = false,
+        val autoBackupFrequency: BackupFrequency = BackupFrequency.WEEKLY,
+        val lastBackupDate: Date? = null,
+        val availableBackups: List<BackupFile> = emptyList()
+    )
+
+    /**
+     * Informations sur un fichier de sauvegarde
+     */
+    data class BackupFile(
+        val name: String,
+        val date: Date,
+        val size: Long,
+        val version: String
+    )
+}
                 }
             } catch (e: Exception) {
                 _error.emit("Erreur lors du chargement de l'état des sauvegardes: ${e.message}")
             }
         }
     }
+
+    fun create() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val backupFile = backupRepository.createBackup()
 
     /**
      * Crée une nouvelle sauvegarde
@@ -159,7 +250,7 @@ class BackupViewModel @Inject constructor(
     /**
      * Configure la sauvegarde automatique
      */
-    fun configureAutoBackup(enabled: Boolean, frequency: BackupFrequency) {
+    fun configureAuto(enabled: Boolean, frequency: BackupFrequency) {
         viewModelScope.launch {
             try {
                 settingsRepository.setAutoBackup(enabled, frequency)

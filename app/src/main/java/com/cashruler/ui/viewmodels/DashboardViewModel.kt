@@ -69,15 +69,10 @@ class DashboardViewModel @Inject constructor(
         )
 
     init {
-        loadMonthlyStats()
+        monthlyStats()
     }
 
-    /**
-     * Charge les statistiques du mois en cours
-     */
-    private fun loadMonthlyStats() {
-        viewModelScope.launch {
-            _isLoading.value = true
+    private fun monthlyStats() = viewModelScope.launch {
             try {
                 // Revenus du mois
                 val monthlyIncome = incomeRepository.getTotalIncomesBetweenDates(
@@ -109,21 +104,10 @@ class DashboardViewModel @Inject constructor(
                         balance = monthlyNetIncome - monthlyExpenses,
                         totalSaved = totalSaved
                     )
-                }
-
-            } catch (e: Exception) {
+                }            } catch (e: Exception) {
                 _error.emit("Erreur lors du chargement des statistiques: ${e.message}")
-            } finally {
-                _isLoading.value = false
             }
         }
-    }
-
-    /**
-     * Rafraîchit les données du tableau de bord
-     */
-    fun refresh() {
-        loadMonthlyStats()
     }
 
     /**
@@ -150,7 +134,6 @@ class DashboardViewModel @Inject constructor(
 
         return Pair(startDate, endDate)
     }
-}
 
 /**
  * Statistiques mensuelles pour le tableau de bord

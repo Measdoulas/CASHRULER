@@ -176,4 +176,18 @@ class IncomeRepository @Inject constructor(
 
         return Date(income.date.time + (income.recurringFrequency * 24 * 60 * 60 * 1000L))
     }
+
+    /**
+     * Récupère tous les revenus sous forme de liste
+     */
+    suspend fun getAllIncomesList(): List<Income> = withContext(dispatcher) {
+        incomeDao.getAllIncomes().first()
+    }
+
+    /**
+     * Supprime toutes les dépenses
+     */
+    suspend fun deleteAllData() = withContext(dispatcher) {
+        incomeDao.deleteAll()
+    }
 }

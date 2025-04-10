@@ -165,4 +165,9 @@ class SpendingLimitRepository @Inject constructor(
                limit.getUsagePercentage() >= limit.warningThreshold &&
                limit.currentSpent <= limit.amount
     }
+
+    suspend fun getAllLimitsList(): List<SpendingLimit> = withContext(dispatcher) {
+        spendingLimitDao.getAllLimits().first()
+    }
+
 }
