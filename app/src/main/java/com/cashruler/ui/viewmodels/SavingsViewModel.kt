@@ -1,0 +1,256 @@
+package com.cashruler.ui.viewmodels
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.cashruler.data.models.SavingsProject
+import com.cashruler.data.repositories.SavingsRepository
+import com.cashruler.data.repositories.ValidationResult
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import java.util.Date
+import javax.inject.Inject
+
+/**
+ * ViewModel pour la gestion des projets d'épargne
+ */
+@HiltViewModel
+class SavingsViewModel @Inject constructor(
+    private val savingsRepository: SavingsRepository
+) : ViewModel() {
+
+    // États UI
+    private val _uiState = MutableStateFlow(SavingsUiState())
+    val uiState = _uiState.asStateFlow()
+
+    // État de chargement
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading = _isLoading.asStateFlow()
+
+    // Messages d'erreur
+    private val _error = MutableSharedFlow<String>()
+    val error = _error.asSharedFlow()
+
+    // Projets d'épargne
+    val activeProjects = savingsRepository.getActiveProjects()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Total épargné
+    val totalSavedAmount = savingsRepository.getTotalSavedAmount()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0.0
+        )
+
+    // Projets à échéance proche
+    val upcomingDeadlines = savingsRepository.getUpcomingDeadlines()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Projets en retard
+    val overdueProjects = savingsRepository.getOverdueProjects()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Projets terminés
+    val completedProjects = savingsRepository.getCompletedProjects()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /**
+     * Met à jour l'état du formulaire
+     */
+    fun updateFormState(update: (SavingsFormState) -> SavingsFormState) {
+        _uiState.update { it.copy(formState = update(it.formState)) }
+    }
+
+    /**
+     * Ajoute un nouveau projet d'épargne
+     */
+    fun addProject() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val project = createProjectFromForm()
+                when (val result = savingsRepository.validateProject(project)) {
+                    is ValidationResult.Success -> {
+                        savingsRepository.addProject(project)
+                        _uiState.update { it.copy(
+                            formState = SavingsFormState(),
+                            isSuccess = true
+                        ) }
+                    }
+                    is ValidationResult.Error -> {
+                        _error.emit(result.errors.joinToString("\n"))
+                    }
+                }
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de l'ajout du projet: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Met à jour un projet existant
+     */
+    fun updateProject(id: Long) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val project = createProjectFromForm().copy(id = id)
+                when (val result = savingsRepository.validateProject(project)) {
+                    is ValidationResult.Success -> {
+                        savingsRepository.updateProject(project)
+                        _uiState.update { it.copy(
+                            formState = SavingsFormState(),
+                            isSuccess = true
+                        ) }
+                    }
+                    is ValidationResult.Error -> {
+                        _error.emit(result.errors.joinToString("\n"))
+                    }
+                }
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de la mise à jour du projet: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Ajoute un montant à un projet
+     */
+    fun addAmount(projectId: Long, amount: Double) {
+        viewModelScope.launch {
+            try {
+                savingsRepository.addToProjectAmount(projectId, amount)
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de l'ajout du montant: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Retire un montant d'un projet
+     */
+    fun subtractAmount(projectId: Long, amount: Double) {
+        viewModelScope.launch {
+            try {
+                savingsRepository.subtractFromProjectAmount(projectId, amount)
+            } catch (e: Exception) {
+                _error.emit("Erreur lors du retrait du montant: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Active/Désactive un projet
+     */
+    fun setProjectActive(projectId: Long, isActive: Boolean) {
+        viewModelScope.launch {
+            try {
+                savingsRepository.setProjectActive(projectId, isActive)
+            } catch (e: Exception) {
+                _error.emit("Erreur lors du changement d'état du projet: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Charge un projet pour édition
+     */
+    fun loadProject(id: Long) {
+        viewModelScope.launch {
+            savingsRepository.getProjectById(id)
+                .filterNotNull()
+                .collect { project ->
+                    _uiState.update { it.copy(formState = SavingsFormState(
+                        title = project.title,
+                        description = project.description,
+                        targetAmount = project.targetAmount,
+                        currentAmount = project.currentAmount,
+                        startDate = project.startDate,
+                        targetDate = project.targetDate,
+                        periodicAmount = project.periodicAmount,
+                        savingFrequency = project.savingFrequency,
+                        isActive = project.isActive,
+                        icon = project.icon,
+                        notes = project.notes,
+                        priority = project.priority
+                    )) }
+                }
+        }
+    }
+
+    /**
+     * Réinitialise le formulaire
+     */
+    fun resetForm() {
+        _uiState.update { it.copy(
+            formState = SavingsFormState(),
+            isSuccess = false
+        ) }
+    }
+
+    private fun createProjectFromForm(): SavingsProject {
+        return with(_uiState.value.formState) {
+            SavingsProject(
+                title = title,
+                description = description,
+                targetAmount = targetAmount,
+                currentAmount = currentAmount,
+                startDate = startDate,
+                targetDate = targetDate,
+                periodicAmount = periodicAmount,
+                savingFrequency = savingFrequency,
+                isActive = isActive,
+                icon = icon,
+                notes = notes.takeIf { it.isNotBlank() },
+                priority = priority
+            )
+        }
+    }
+}
+
+/**
+ * État UI pour l'écran d'épargne
+ */
+data class SavingsUiState(
+    val formState: SavingsFormState = SavingsFormState(),
+    val isSuccess: Boolean = false
+)
+
+/**
+ * État du formulaire de projet d'épargne
+ */
+data class SavingsFormState(
+    val title: String = "",
+    val description: String = "",
+    val targetAmount: Double = 0.0,
+    val currentAmount: Double = 0.0,
+    val startDate: Date = Date(),
+    val targetDate: Date? = null,
+    val periodicAmount: Double? = null,
+    val savingFrequency: Int? = null,
+    val isActive: Boolean = true,
+    val icon: String? = null,
+    val notes: String = "",
+    val priority: Int = 0
+)

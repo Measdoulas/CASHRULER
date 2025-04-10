@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base colors -->
+    <color name="primary">#2196F3</color>
+    <color name="secondary">#FF4081</color>
+    <color name="accent">#FFB300</color>
+
+    <!-- Surface and text colors -->
+    <color name="surface">#FFFFFF</color>
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+
+    <!-- Status colors -->
+    <color name="error">#FF5252</color>
+    <color name="success">#4CAF50</color>
+    <color name="warning">#FFB300</color>
+    <color name="info">#2196F3</color>
+
+    <!-- Dark theme colors -->
+    <color name="surface_dark">#121212</color>
+    <color name="text_primary_dark">#FFFFFF</color>
+    <color name="text_secondary_dark">#B3FFFFFF</color>
+
+    <!-- System bars -->
+    <color name="status_bar">#1976D2</color>
+    <color name="navigation_bar">#000000</color>
+
+    <!-- Common helper colors -->
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="transparent">#00000000</color>
+
+    <!-- Specific feature colors -->
+    <color name="expense_red">#FF5252</color>
+    <color name="income_green">#4CAF50</color>
+    <color name="savings_blue">#2196F3</color>
+    <color name="budget_amber">#FFB300</color>
+
+    <!-- Progress colors -->
+    <color name="progress_low">#4CAF50</color>
+    <color name="progress_medium">#FFB300</color>
+    <color name="progress_high">#FF5252</color>
+
+    <!-- Chart colors -->
+    <color name="chart_primary">#2196F3</color>
+    <color name="chart_secondary">#FF4081</color>
+    <color name="chart_tertiary">#FFB300</color>
+    <color name="chart_quaternary">#4CAF50</color>
+    <color name="chart_text">#757575</color>
+    <color name="chart_grid">#E0E0E0</color>
+</resources>
