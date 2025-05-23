@@ -1,6 +1,8 @@
 package com.cashruler.data.repositories
 
+import com.cashruler.data.dao.CategoryDao
 import com.cashruler.data.dao.ExpenseDao
+import com.cashruler.data.models.CategoryEntity
 import com.cashruler.data.models.Expense
 import com.cashruler.di.IODispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -16,6 +18,7 @@ import javax.inject.Singleton
 @Singleton
 class ExpenseRepository @Inject constructor(
     private val expenseDao: ExpenseDao,
+    private val categoryDao: CategoryDao, // Injection de CategoryDao
     @IODispatcher private val dispatcher: CoroutineDispatcher
 ) {
     /**
@@ -88,10 +91,20 @@ class ExpenseRepository @Inject constructor(
         .flowOn(dispatcher)
 
     /**
-     * Récupère toutes les catégories distinctes utilisées
+     * Récupère toutes les catégories depuis la table CategoryEntity
      */
-    fun getAllCategories() = expenseDao.getAllCategories()
+    fun getAllCategories(): Flow<List<String>> = categoryDao.getAll()
+        .map { categories -> categories.map { it.name } }
         .flowOn(dispatcher)
+
+    /**
+     * Ajoute une nouvelle catégorie à la table CategoryEntity
+     */
+    suspend fun addCategory(categoryName: String) = withContext(dispatcher) {
+        // Vérifie si la catégorie existe déjà pour éviter les doublons via la contrainte unique de la DB
+        // L'insertion sera ignorée par Room si le nom existe déjà grâce à OnConflictStrategy.IGNORE
+        categoryDao.insert(CategoryEntity(name = categoryName))
+    }
 
     /**
      * Ajoute une nouvelle dépense

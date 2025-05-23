@@ -20,7 +20,10 @@ import com.cashruler.ui.screens.expenses.ExpenseFormScreen
 import com.cashruler.ui.screens.expenses.ExpensesScreen
 import com.cashruler.ui.screens.income.IncomeFormScreen
 import com.cashruler.ui.screens.income.IncomeScreen
-import com.cashruler.ui.screens.savings.*
+// import com.cashruler.ui.screens.savings.SavingsTransactionFormScreen // Supprimé
+import com.cashruler.ui.screens.savings.SavingsFormScreen
+import com.cashruler.ui.screens.savings.SavingsProjectScreen
+import com.cashruler.ui.screens.savings.SavingsScreen
 import com.cashruler.ui.screens.settings.SettingsScreen
 import com.cashruler.ui.screens.statistics.StatisticsScreen
 
@@ -77,7 +80,11 @@ fun MainNavigation() {
                 enterTransition = { slideInHorizontally() },
                 exitTransition = { slideOutHorizontally() }
             ) {
-                ExpensesScreen(navController)
+                ExpensesScreen(
+                    onNavigateToAddExpense = { navController.navigate(Routes.EXPENSE_FORM_NEW) },
+                    onNavigateToEditExpense = { expenseId -> navController.navigate(Routes.expenseDetails(expenseId)) },
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
 
             composable(
@@ -85,7 +92,11 @@ fun MainNavigation() {
                 enterTransition = { slideInHorizontally() },
                 exitTransition = { slideOutHorizontally() }
             ) {
-                IncomeScreen(navController)
+                IncomeScreen(
+                    onNavigateToAddIncome = { navController.navigate(Routes.INCOME_FORM_NEW) },
+                    onNavigateToEditIncome = { incomeId -> navController.navigate(Routes.incomeDetails(incomeId)) },
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
 
             composable(
@@ -93,7 +104,11 @@ fun MainNavigation() {
                 enterTransition = { slideInHorizontally() },
                 exitTransition = { slideOutHorizontally() }
             ) {
-                SavingsScreen(navController)
+                SavingsScreen(
+                    onNavigateToAddProject = { navController.navigate(Routes.SAVINGS_FORM_NEW) },
+                    onNavigateToProjectDetails = { projectId -> navController.navigate(Routes.savingsProjectDetails(projectId)) },
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
 
             composable(
@@ -112,52 +127,62 @@ fun MainNavigation() {
                 SettingsScreen(navController)
             }
 
-            // Formulaires
-            composable(Routes.EXPENSE_FORM) {
-                ExpenseFormScreen(navController)
+            // Formulaires et Détails (regroupés pour clarté)
+            composable(Routes.EXPENSE_FORM_NEW) {
+                ExpenseFormScreen(expenseId = null, onNavigateBack = { navController.popBackStack() })
             }
-
-            composable(Routes.INCOME_FORM) {
-                IncomeFormScreen(navController)
-            }
-
-            composable(Routes.SAVINGS_FORM) {
-                SavingsFormScreen(navController)
-            }
-
-            // Détails
             composable(
-                route = Routes.EXPENSE_DETAILS,
+                route = Routes.EXPENSE_DETAILS, // Réutilise EXPENSE_DETAILS pour l'édition
                 arguments = listOf(navArgument("expenseId") { type = NavType.LongType })
             ) { backStackEntry ->
-                val expenseId = backStackEntry.arguments?.getLong("expenseId") ?: return@composable
-                ExpenseFormScreen(navController, expenseId)
+                val expenseId = backStackEntry.arguments?.getLong("expenseId")
+                ExpenseFormScreen(expenseId = expenseId, onNavigateBack = { navController.popBackStack() })
             }
 
+            composable(Routes.INCOME_FORM_NEW) {
+                IncomeFormScreen(incomeId = null, onNavigateBack = { navController.popBackStack() })
+            }
             composable(
-                route = Routes.INCOME_DETAILS,
+                route = Routes.INCOME_DETAILS, // Réutilise INCOME_DETAILS pour l'édition
                 arguments = listOf(navArgument("incomeId") { type = NavType.LongType })
             ) { backStackEntry ->
-                val incomeId = backStackEntry.arguments?.getLong("incomeId") ?: return@composable
-                IncomeFormScreen(navController, incomeId)
+                val incomeId = backStackEntry.arguments?.getLong("incomeId")
+                IncomeFormScreen(incomeId = incomeId, onNavigateBack = { navController.popBackStack() })
             }
 
-            // Projets d'épargne
+            composable(Routes.SAVINGS_FORM_NEW) {
+                SavingsFormScreen(projectId = null, onNavigateBack = { navController.popBackStack() })
+            }
             composable(
-                route = Routes.SAVINGS_PROJECT,
+                route = Routes.SAVINGS_FORM_EDIT, // Route pour éditer un projet existant
+                arguments = listOf(navArgument("projectId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val projectId = backStackEntry.arguments?.getLong("projectId")
+                SavingsFormScreen(projectId = projectId, onNavigateBack = { navController.popBackStack() })
+            }
+
+
+            // Projets d'épargne - Écran de détails
+            composable(
+                route = Routes.SAVINGS_PROJECT_DETAILS, // Renommé pour clarté vs SAVINGS_PROJECT
                 arguments = listOf(navArgument("projectId") { type = NavType.LongType })
             ) { backStackEntry ->
                 val projectId = backStackEntry.arguments?.getLong("projectId") ?: return@composable
-                SavingsProjectScreen(navController, projectId)
+                SavingsProjectScreen(
+                    projectId = projectId,
+                    onNavigateToEditProject = { navController.navigate(Routes.savingsFormEdit(projectId)) },
+                    onNavigateBack = { navController.popBackStack() }
+                    // onNavigateToAddTransaction a été supprimé de SavingsProjectScreen
+                )
             }
 
-            composable(
-                route = Routes.SAVINGS_TRANSACTION,
-                arguments = listOf(navArgument("projectId") { type = NavType.LongType })
-            ) { backStackEntry ->
-                val projectId = backStackEntry.arguments?.getLong("projectId") ?: return@composable
-                SavingsTransactionFormScreen(navController, projectId)
-            }
+            // composable( // Route et écran supprimés
+            //     route = Routes.SAVINGS_TRANSACTION,
+            //     arguments = listOf(navArgument("projectId") { type = NavType.LongType })
+            // ) { backStackEntry ->
+            //     val projectId = backStackEntry.arguments?.getLong("projectId") ?: return@composable
+            //     // SavingsTransactionFormScreen(navController, projectId) // Écran supprimé
+            // }
 
             // Paramètres
             settingsGraph(navController)

@@ -32,6 +32,7 @@ fun ExpenseFormScreen(
 
     var showSuccessMessage by remember { mutableStateOf(false) }
     var showErrorMessage by remember { mutableStateOf<String?>(null) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) } // Nouveau
 
     // Charge les données de la dépense si on est en mode édition
     LaunchedEffect(expenseId) {
@@ -107,10 +108,13 @@ fun ExpenseFormScreen(
 
             // Catégorie
             CategorySelector(
-                categories = categories.ifEmpty { Expense.DEFAULT_CATEGORIES },
-                selectedCategory = formState.category,
+                categories = categories.ifEmpty { listOf("Aucune catégorie", *Expense.DEFAULT_CATEGORIES.toTypedArray()) },
+                selectedCategory = formState.category.ifEmpty { "Aucune catégorie" },
                 onCategorySelected = { category ->
-                    viewModel.updateFormState { it.copy(category = category) }
+                    viewModel.updateFormState { it.copy(category = if (category == "Aucune catégorie") "" else category) }
+                },
+                onAddNewCategoryClick = { // Nouveau
+                    showAddCategoryDialog = true
                 },
                 label = "Catégorie",
                 isError = "category" in validationErrors,
@@ -186,6 +190,36 @@ fun ExpenseFormScreen(
                 message = error,
                 type = MessageType.ERROR,
                 onDismiss = { showErrorMessage = null }
+            )
+        }
+
+        // Dialogue pour ajouter une nouvelle catégorie
+        if (showAddCategoryDialog) {
+            var newCategoryName by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showAddCategoryDialog = false },
+                title = { Text("Nouvelle catégorie") },
+                text = {
+                    OutlinedTextField(
+                        value = newCategoryName,
+                        onValueChange = { newCategoryName = it },
+                        label = { Text("Nom de la catégorie") },
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (newCategoryName.isNotBlank()) {
+                            viewModel.addNewCategory(newCategoryName)
+                            // Optionnel: Sélectionne automatiquement la nouvelle catégorie
+                            viewModel.updateFormState { it.copy(category = newCategoryName) }
+                            showAddCategoryDialog = false
+                        }
+                    }) { Text("Ajouter") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddCategoryDialog = false }) { Text("Annuler") }
+                }
             )
         }
     }

@@ -29,10 +29,11 @@ fun IncomeFormScreen(
     val formState = uiState.formState
     val validationErrors = uiState.validationErrors
     val isLoading by viewModel.isLoading.collectAsState()
-    val types by viewModel.allTypes.collectAsState()
+    val types by viewModel.allTypes.collectAsState() // Déjà présent et correct
 
     var showSuccessMessage by remember { mutableStateOf(false) }
     var showErrorMessage by remember { mutableStateOf<String?>(null) }
+    var showAddTypeDialog by remember { mutableStateOf(false) } // Ajout pour le dialogue
 
     // Charge les données du revenu si on est en mode édition
     LaunchedEffect(incomeId) {
@@ -108,10 +109,13 @@ fun IncomeFormScreen(
 
             // Type
             CategorySelector(
-                categories = types.ifEmpty { Income.DEFAULT_TYPES },
+                categories = types.ifEmpty { Income.DEFAULT_TYPES }, // `types` est déjà collecté
                 selectedCategory = formState.type,
-                onCategorySelected = { type ->
-                    viewModel.updateFormState { it.copy(type = type) }
+                onCategorySelected = { typeName ->
+                    viewModel.updateFormState { it.copy(type = typeName) }
+                },
+                onAddNewCategoryClick = { // Utilisation du nouveau paramètre de CategorySelector
+                    showAddTypeDialog = true
                 },
                 label = "Type",
                 isError = "type" in validationErrors,
@@ -215,6 +219,36 @@ fun IncomeFormScreen(
                 message = error,
                 type = MessageType.ERROR,
                 onDismiss = { showErrorMessage = null }
+            )
+        }
+
+        // Dialogue pour ajouter un nouveau type de revenu
+        if (showAddTypeDialog) {
+            var newTypeName by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showAddTypeDialog = false },
+                title = { Text("Nouveau type de revenu") },
+                text = {
+                    OutlinedTextField(
+                        value = newTypeName,
+                        onValueChange = { newTypeName = it },
+                        label = { Text("Nom du type") },
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (newTypeName.isNotBlank()) {
+                            viewModel.addNewType(newTypeName)
+                            // Optionnel: Sélectionne automatiquement le nouveau type
+                            viewModel.updateFormState { it.copy(type = newTypeName) }
+                            showAddTypeDialog = false
+                        }
+                    }) { Text("Ajouter") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddTypeDialog = false }) { Text("Annuler") }
+                }
             )
         }
     }

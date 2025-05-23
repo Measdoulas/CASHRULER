@@ -64,6 +64,7 @@ fun CategorySelector(
     categories: List<String>,
     selectedCategory: String,
     onCategorySelected: (String) -> Unit,
+    onAddNewCategoryClick: () -> Unit, // Nouveau paramètre
     label: String,
     isError: Boolean = false,
     errorMessage: String? = null,
@@ -104,6 +105,14 @@ fun CategorySelector(
                         }
                     )
                 }
+                // Option pour ajouter une nouvelle catégorie
+                DropdownMenuItem(
+                    text = { Text("Ajouter une nouvelle catégorie...") },
+                    onClick = {
+                        onAddNewCategoryClick()
+                        expanded = false
+                    }
+                )
             }
         }
     }

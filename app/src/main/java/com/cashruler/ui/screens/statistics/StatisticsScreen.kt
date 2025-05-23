@@ -21,14 +21,13 @@ fun StatisticsScreen(
     modifier: Modifier = Modifier,
     viewModel: StatisticsViewModel = hiltViewModel()
 ) {
-    val currentPeriod by viewModel.currentPeriod.collectAsState()
-    val previousPeriod by viewModel.previousPeriod.collectAsState()
-    val expenseDistribution by viewModel.expenseDistribution.collectAsState()
-    val monthlyTrends by viewModel.monthlyTrends.collectAsState()
-    val savingsGoals by viewModel.savingsGoals.collectAsState()
+    val selectedPeriod by viewModel.selectedPeriod.collectAsState() // Enum AnalysisPeriod
+    val globalStats by viewModel.stats.collectAsState() // Data class GlobalStatistics
+    val expensesByCategory by viewModel.expensesByCategory.collectAsState() // Map<String, Double>
+    val incomesByType by viewModel.incomesByType.collectAsState() // Map<String, Double>
     val isLoading by viewModel.isLoading.collectAsState()
 
-    var showFilterDialog by remember { mutableStateOf(false) }
+    var showFilterDialog by remember { mutableStateOf(false) } // Peut être retiré ou simplifié
     var showErrorMessage by remember { mutableStateOf<String?>(null) }
 
     // Collecte les messages d'erreur
@@ -42,116 +41,102 @@ fun StatisticsScreen(
         title = "Statistiques",
         navigateBack = onNavigateBack,
         actions = {
-            IconButton(onClick = { showFilterDialog = true }) {
+            // IconButton(onClick = { showFilterDialog = true }) { // Simplifié/Retiré
+            //     Icon(
+            //         imageVector = Icons.Default.FilterList,
+            //         contentDescription = "Filtrer"
+            //     )
+            // }
+            // IconButton(onClick = { /* viewModel.exportData() */ }) { // Supprimé
+            //     Icon(
+            //         imageVector = Icons.Default.Share,
+            //         contentDescription = "Exporter"
+            //     )
+            // }
+             IconButton(onClick = { viewModel.refresh() }) { // Ajout d'un bouton de rafraîchissement
                 Icon(
-                    imageVector = Icons.Default.FilterList,
-                    contentDescription = "Filtrer"
-                )
-            }
-            IconButton(onClick = { viewModel.exportData() }) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = "Exporter"
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Rafraîchir"
                 )
             }
         },
         modifier = modifier
     ) { paddingValues ->
-        if (isLoading) {
-            LoadingState()
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                // Sélecteur de période
-                PeriodSelector(
-                    selectedPeriod = viewModel.selectedPeriodType.value,
-                    onPeriodSelected = { viewModel.updatePeriodType(it) },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Sélecteur de période
+            PeriodSelector( // Utilise le PeriodSelector adapté plus bas
+                selectedPeriod = selectedPeriod,
+                onPeriodSelected = { period -> viewModel.setPeriod(period) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
 
-                // Résumé de la période
-                currentPeriod?.let { current ->
-                    PeriodSummaryCard(
-                        income = current.income,
-                        expenses = current.expenses,
-                        savings = current.savings,
-                        periodLabel = current.label,
-                        previousPeriodIncome = previousPeriod?.income,
-                        previousPeriodExpenses = previousPeriod?.expenses,
-                        previousPeriodSavings = previousPeriod?.savings,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
+            if (isLoading) {
+                LoadingState(modifier = Modifier.fillMaxSize())
+            } else {
+                // Statistiques Globales
+                GlobalStatsCard(stats = globalStats, modifier = Modifier.padding(16.dp))
 
-                // Répartition des dépenses
-                if (expenseDistribution.isNotEmpty()) {
-                    ExpenseDistributionChart(
-                        data = expenseDistribution,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-
-                // Évolution des dépenses
-                if (monthlyTrends.isNotEmpty()) {
-                    ExpenseTrendChart(
-                        monthlyExpenses = monthlyTrends,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-
-                // Objectifs d'épargne
-                if (savingsGoals.isNotEmpty()) {
+                // Répartition des dépenses par catégorie
+                if (expensesByCategory.isNotEmpty()) {
                     ListSection(
-                        title = "Objectifs d'épargne",
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        title = "Dépenses par catégorie",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            savingsGoals.forEach { goal ->
-                                GoalProgressIndicator(
-                                    currentValue = goal.currentAmount,
-                                    targetValue = goal.targetAmount,
-                                    title = goal.title
-                                )
+                        // Ici, on pourrait utiliser un PieChart si disponible
+                        // Pour l'instant, affichage sous forme de liste:
+                        Column {
+                            expensesByCategory.forEach { (category, amount) ->
+                                Text("$category: ${com.cashruler.util.formatCurrency(amount)}")
                             }
                         }
+                        // Exemple avec un composant PieChart (si ChartComponents.PieChart existe)
+                        // com.cashruler.ui.components.PieChart(
+                        //     data = expensesByCategory.map { PieChartData(it.key, it.value.toFloat()) },
+                        //     modifier = Modifier.height(200.dp).fillMaxWidth()
+                        // )
                     }
+                } else {
+                    Text("Aucune dépense pour cette période.", modifier = Modifier.padding(16.dp))
+                }
+                
+                // Répartition des revenus par type (Optionnel)
+                if (incomesByType.isNotEmpty()) {
+                     ListSection(
+                        title = "Revenus par type",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Column {
+                            incomesByType.forEach { (type, amount) ->
+                                Text("$type: ${com.cashruler.util.formatCurrency(amount)}")
+                            }
+                        }
+                        // Exemple avec un composant PieChart (si ChartComponents.PieChart existe)
+                        // com.cashruler.ui.components.PieChart(
+                        //     data = incomesByType.map { PieChartData(it.key, it.value.toFloat()) },
+                        //     modifier = Modifier.height(200.dp).fillMaxWidth()
+                        // )
+                    }
+                } else {
+                     Text("Aucun revenu pour cette période.", modifier = Modifier.padding(16.dp))
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
 
-        // Boîte de dialogue de filtres
+        // Boîte de dialogue de filtres (simplifié ou à retirer)
         if (showFilterDialog) {
             AlertDialog(
                 onDismissRequest = { showFilterDialog = false },
                 title = { Text("Filtres") },
-                text = {
-                    Column {
-                        // TODO: Ajouter les options de filtrage
-                        Text("Options de filtrage à implémenter")
-                    }
-                },
+                text = { Text("Le filtrage avancé n'est pas encore implémenté pour cette vue.") },
                 confirmButton = {
-                    TextButton(
-                        onClick = {
-                            // TODO: Appliquer les filtres
-                            showFilterDialog = false
-                        }
-                    ) {
-                        Text("Appliquer")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showFilterDialog = false }) {
-                        Text("Annuler")
-                    }
+                    TextButton(onClick = { showFilterDialog = false }) { Text("OK") }
                 }
             )
         }
@@ -169,29 +154,51 @@ fun StatisticsScreen(
 
 @Composable
 private fun PeriodSelector(
-    selectedPeriod: PeriodType,
-    onPeriodSelected: (PeriodType) -> Unit,
+    selectedPeriod: com.cashruler.ui.viewmodels.AnalysisPeriod,
+    onPeriodSelected: (com.cashruler.ui.viewmodels.AnalysisPeriod) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        PeriodType.values().forEach { period ->
+        com.cashruler.ui.viewmodels.AnalysisPeriod.values().forEach { period ->
             FilterChip(
                 selected = selectedPeriod == period,
                 onClick = { onPeriodSelected(period) },
-                label = { Text(period.label) }
+                label = { Text(period.name.lowercase().replaceFirstChar { it.titlecase() }) } // ex: Week, Month
             )
         }
     }
 }
 
-enum class PeriodType(val label: String) {
-    WEEK("Semaine"),
-    MONTH("Mois"),
-    YEAR("Année")
+
+@Composable
+fun GlobalStatsCard(stats: com.cashruler.ui.viewmodels.GlobalStatistics, modifier: Modifier = Modifier) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Statistiques Globales", style = MaterialTheme.typography.titleLarge)
+            Text("Revenu Total: ${com.cashruler.util.formatCurrency(stats.totalIncome)}")
+            Text("Revenu Net Total: ${com.cashruler.util.formatCurrency(stats.totalNetIncome)}")
+            Text("Impôts Totaux: ${com.cashruler.util.formatCurrency(stats.totalTaxes)}")
+            Text("Dépenses Totales: ${com.cashruler.util.formatCurrency(stats.totalExpenses)}")
+            Text("Solde: ${com.cashruler.util.formatCurrency(stats.balance)}")
+            Divider()
+            Text("Épargne Actuelle: ${com.cashruler.util.formatCurrency(stats.savingsAmount)} sur ${com.cashruler.util.formatCurrency(stats.savingsTarget)}")
+            Text("Projets d'épargne actifs: ${stats.activeSavingsProjects}")
+            Divider()
+            Text("Limites de dépenses actives: ${stats.activeLimits}")
+            Text("Limites dépassées: ${stats.exceededLimits}")
+            // On pourrait ajouter les taux ici (getSavingsRate, getExpenseRate, etc.)
+        }
+    }
 }
+// Supprimer l'ancien enum PeriodType s'il n'est plus utilisé ailleurs.
+// enum class PeriodType(val label: String) {
+//     WEEK("Semaine"),
+//     MONTH("Mois"),
+//     YEAR("Année")
+// }
 
 @Preview(showBackground = true)
 @Composable

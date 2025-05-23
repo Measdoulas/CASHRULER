@@ -9,6 +9,9 @@ import com.cashruler.data.repositories.ValidationResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
 import java.util.Date
 import javax.inject.Inject
 
@@ -39,6 +42,21 @@ class ExpenseViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
+        )
+
+    val expensesGroupedByMonth: StateFlow<Map<YearMonth, List<Expense>>> =
+        allExpenses.map { expenses ->
+            expenses.groupBy { expense ->
+                // Convertit la Date de l'expense en YearMonth
+                val localDate = expense.date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate()
+                YearMonth.from(localDate)
+            }
+            // Optionnel: trie la map par YearMonth décroissant pour afficher les plus récents en premier
+            .toSortedMap(compareByDescending { it })
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
         )
 
     // Catégories
@@ -264,6 +282,39 @@ class ExpenseViewModel @Inject constructor(
                 attachmentUri = attachmentUri,
                 spendingLimitId = spendingLimitId
             )
+        }
+    }
+
+    /**
+     * Ajoute une nouvelle catégorie
+     */
+    fun addNewCategory(categoryName: String) {
+        if (categoryName.isBlank()) {
+            viewModelScope.launch {
+                _error.emit("Le nom de la catégorie ne peut pas être vide.")
+            }
+            return
+        }
+        // Vérifie si la catégorie existe déjà (insensible à la casse)
+        val existingCategory = allCategories.value.firstOrNull { it.equals(categoryName, ignoreCase = true) }
+        if (existingCategory != null) {
+            viewModelScope.launch {
+                _error.emit("La catégorie '$existingCategory' existe déjà.")
+                // Optionnel: Sélectionne la catégorie existante au lieu d'émettre une erreur
+                // updateFormState { it.copy(category = existingCategory) }
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                expenseRepository.addCategory(categoryName) // Nouvelle fonction dans le Repository
+                // Pas besoin de rafraîchir manuellement allCategories si le Flow du repo se met à jour
+                // Si la nouvelle catégorie doit être sélectionnée automatiquement après ajout:
+                // updateFormState { it.copy(category = categoryName) }
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de l'ajout de la catégorie: ${e.message}")
+            }
         }
     }
 }

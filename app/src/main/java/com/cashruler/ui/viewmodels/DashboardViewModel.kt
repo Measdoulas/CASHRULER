@@ -34,7 +34,10 @@ class DashboardViewModel @Inject constructor(
     val monthlyStats = _monthlyStats.asStateFlow()
 
     // Date de début et fin du mois en cours
-    private val currentMonthDates = calculateCurrentMonthDates()
+    internal val currentMonthDates = calculateCurrentMonthDates()
+
+    // Date de début et fin du mois précédent
+    internal val previousMonthDates = calculatePreviousMonthDates()
 
     // Projets d'épargne actifs
     val activeSavingsProjects = savingsRepository.getActiveProjects()
@@ -95,6 +98,18 @@ class DashboardViewModel @Inject constructor(
                 // Total épargné
                 val totalSaved = savingsRepository.getTotalSavedAmount().first()
 
+                // Revenus du mois précédent
+                val previousMonthTotalIncome = incomeRepository.getTotalIncomesBetweenDates(
+                    previousMonthDates.first,
+                    previousMonthDates.second
+                ).first()
+
+                // Dépenses du mois précédent
+                val previousMonthTotalExpenses = expenseRepository.getTotalExpensesBetweenDates(
+                    previousMonthDates.first,
+                    previousMonthDates.second
+                ).first()
+
                 // Met à jour les statistiques
                 _monthlyStats.update { stats ->
                     stats.copy(
@@ -102,9 +117,12 @@ class DashboardViewModel @Inject constructor(
                         netIncome = monthlyNetIncome,
                         expenses = monthlyExpenses,
                         balance = monthlyNetIncome - monthlyExpenses,
-                        totalSaved = totalSaved
+                        totalSaved = totalSaved,
+                        previousMonthIncome = previousMonthTotalIncome,
+                        previousMonthExpenses = previousMonthTotalExpenses
                     )
-                }            } catch (e: Exception) {
+                }
+            } catch (e: Exception) {
                 _error.emit("Erreur lors du chargement des statistiques: ${e.message}")
             }
         }
@@ -135,6 +153,34 @@ class DashboardViewModel @Inject constructor(
         return Pair(startDate, endDate)
     }
 
+    /**
+     * Calcule les dates de début et fin du mois précédent
+     */
+    internal fun calculatePreviousMonthDates(): Pair<Date, Date> {
+        val calendar = Calendar.getInstance()
+
+        // Mois précédent
+        calendar.add(Calendar.MONTH, -1)
+
+        // Début du mois précédent
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startDate = calendar.time
+
+        // Fin du mois précédent
+        calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+        calendar.set(Calendar.HOUR_OF_DAY, 23)
+        calendar.set(Calendar.MINUTE, 59)
+        calendar.set(Calendar.SECOND, 59)
+        calendar.set(Calendar.MILLISECOND, 999)
+        val endDate = calendar.time
+
+        return Pair(startDate, endDate)
+    }
+
 /**
  * Statistiques mensuelles pour le tableau de bord
  */
@@ -143,7 +189,9 @@ data class MonthlyStats(
     val netIncome: Double = 0.0,
     val expenses: Double = 0.0,
     val balance: Double = 0.0,
-    val totalSaved: Double = 0.0
+    val totalSaved: Double = 0.0,
+    val previousMonthIncome: Double = 0.0,
+    val previousMonthExpenses: Double = 0.0
 ) {
     /**
      * Calcule le taux d'épargne du mois

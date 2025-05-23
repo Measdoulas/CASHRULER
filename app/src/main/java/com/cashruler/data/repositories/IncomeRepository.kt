@@ -1,7 +1,9 @@
 package com.cashruler.data.repositories
 
 import com.cashruler.data.dao.IncomeDao
+import com.cashruler.data.dao.IncomeTypeDao
 import com.cashruler.data.models.Income
+import com.cashruler.data.models.IncomeTypeEntity
 import com.cashruler.di.IODispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.*
@@ -16,6 +18,7 @@ import javax.inject.Singleton
 @Singleton
 class IncomeRepository @Inject constructor(
     private val incomeDao: IncomeDao,
+    private val incomeTypeDao: IncomeTypeDao, // Injection de IncomeTypeDao
     @IODispatcher private val dispatcher: CoroutineDispatcher
 ) {
     /**
@@ -104,10 +107,19 @@ class IncomeRepository @Inject constructor(
             .flowOn(dispatcher)
 
     /**
-     * Récupère tous les types distincts utilisés
+     * Récupère tous les types depuis la table IncomeTypeEntity
      */
-    fun getAllTypes() = incomeDao.getAllTypes()
+    fun getAllTypes(): Flow<List<String>> = incomeTypeDao.getAll()
+        .map { types -> types.map { it.name } }
         .flowOn(dispatcher)
+
+    /**
+     * Ajoute un nouveau type de revenu à la table IncomeTypeEntity
+     */
+    suspend fun addType(typeName: String) = withContext(dispatcher) {
+        if (typeName.isBlank()) return@withContext
+        incomeTypeDao.insert(IncomeTypeEntity(name = typeName))
+    }
 
     /**
      * Ajoute un nouveau revenu
