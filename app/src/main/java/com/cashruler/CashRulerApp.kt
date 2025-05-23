@@ -80,6 +80,8 @@ class CashRulerApp : MultiDexApplication(), Configuration.Provider {
     private fun scheduleWorkers() {
         // Programme le worker pour les revenus récurrents
         IncomeReminderWorker.schedule(this)
+        // Programme le worker pour les rappels de dépenses
+        ExpenseReminderWorker.schedule(this)
     }
 
     companion object {

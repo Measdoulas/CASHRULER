@@ -137,7 +137,7 @@ class ExpenseViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             val formState = _uiState.value.formState
-            val expense = Expense(
+            var expense = Expense( // Changé en var
                 amount = formState.amount,
                 description = formState.description,
                 category = formState.category,
@@ -148,6 +148,11 @@ class ExpenseViewModel @Inject constructor(
                 attachmentUri = formState.attachmentUri,
                 spendingLimitId = formState.spendingLimitId
             )
+            if (expense.isRecurring) {
+                expense = expense.copy(
+                    nextReminderDate = expenseRepository.calculateNextReminderDate(expense)
+                )
+            }
             handleExpense(expense)
         }.invokeOnCompletion { _isLoading.value = false }
     }
@@ -166,7 +171,7 @@ class ExpenseViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             val formState = _uiState.value.formState
-            val expense = Expense(
+            var expense = Expense( // Changé en var
                 id = id,
                 amount = formState.amount,
                 description = formState.description,
@@ -178,6 +183,11 @@ class ExpenseViewModel @Inject constructor(
                 attachmentUri = formState.attachmentUri,
                 spendingLimitId = formState.spendingLimitId
             )
+            if (expense.isRecurring) {
+                expense = expense.copy(
+                    nextReminderDate = expenseRepository.calculateNextReminderDate(expense)
+                )
+            }
             handleExpense(expense, id)
         }.invokeOnCompletion { _isLoading.value = false }
     }

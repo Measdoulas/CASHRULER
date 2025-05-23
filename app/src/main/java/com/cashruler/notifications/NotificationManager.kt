@@ -59,8 +59,18 @@ class NotificationManager @Inject constructor(
                 enableVibration(true)
             }
 
+            // Canal pour les rappels de dépenses
+            val expenseReminderChannel = NotificationChannel(
+                CHANNEL_EXPENSE_REMINDER,
+                "Rappels de dépenses", // Nom visible pour l'utilisateur
+                NotificationManager.IMPORTANCE_DEFAULT 
+            ).apply {
+                description = "Rappels pour les dépenses récurrentes"
+                enableVibration(true)
+            }
+
             notificationManager.createNotificationChannels(
-                listOf(spendingLimitChannel, incomeReminderChannel, savingsGoalChannel)
+                listOf(spendingLimitChannel, incomeReminderChannel, savingsGoalChannel, expenseReminderChannel) // Ajoute le nouveau
             )
         }
     }
@@ -96,6 +106,40 @@ class NotificationManager @Inject constructor(
             ))
             .setProgress(100, progress, false)
             .setColor(ContextCompat.getColor(context, R.color.warning))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+    }
+
+    fun showSavingsGoalAchieved(
+        notificationId: Int, // Peut être basé sur projectId.toInt()
+        projectTitle: String,
+        targetAmount: Double
+    ) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("screen", "savings_project_details") // Route pour naviguer vers les détails du projet
+            putExtra("projectId", notificationId.toLong()) // Utilise notificationId comme projectId
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId, // Utilise un ID unique pour la notification
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val message = "Félicitations ! Vous avez atteint votre objectif de ${numberFormat.format(targetAmount)} FCFA pour '$projectTitle'."
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_SAVINGS_GOAL) // Utilise le canal existant
+            .setSmallIcon(R.drawable.ic_savings_achieved) // Tu devras ajouter une icône appropriée ic_savings_achieved.xml
+            .setContentTitle("Objectif d'épargne atteint !")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setColor(ContextCompat.getColor(context, R.color.success)) // Utilise une couleur de succès
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
@@ -179,5 +223,40 @@ class NotificationManager @Inject constructor(
         const val CHANNEL_SPENDING_LIMIT = "spending_limit"
         const val CHANNEL_INCOME_REMINDER = "income_reminder"
         const val CHANNEL_SAVINGS_GOAL = "savings_goal"
+        const val CHANNEL_EXPENSE_REMINDER = "expense_reminder" // Ajoute cette ligne
+    }
+
+    fun showExpenseReminder(
+        expenseId: Int,
+        title: String,
+        message: String,
+        amount: Double // Peut être utile de l'afficher
+    ) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            // Optionnel: Naviguer vers l'écran des dépenses ou un détail de dépense
+            // putExtra("screen", "expenses") 
+            // putExtra("expenseId", expenseId.toLong())
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            expenseId + 20000, // Ajoute un offset pour éviter collisions d'ID avec autres notifs
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_EXPENSE_REMINDER)
+            .setSmallIcon(R.drawable.ic_receipt) // Utilise une icône existante ou crée en une nouvelle
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$message - Montant : ${numberFormat.format(amount)} FCFA"))
+            .setColor(ContextCompat.getColor(context, R.color.expense_red)) // Utilise la couleur existante expense_red
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notificationManager.notify(expenseId + 20000, notification)
     }
 }

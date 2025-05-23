@@ -42,6 +42,7 @@ data class Expense(
      * Null si la dépense n'est pas récurrente
      */
     val recurringFrequency: Int? = null,
+    val nextReminderDate: Date? = null, // NOUVEAU CHAMP
     
     /**
      * Date de création de l'entrée

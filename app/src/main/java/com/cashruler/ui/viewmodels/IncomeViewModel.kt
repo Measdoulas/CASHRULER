@@ -8,6 +8,9 @@ import com.cashruler.data.repositories.ValidationResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
 import java.util.Date
 import javax.inject.Inject
 
@@ -53,6 +56,19 @@ class IncomeViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
+        )
+
+    val incomesGroupedByMonth: StateFlow<Map<YearMonth, List<Income>>> =
+        allIncomes.map { incomes ->
+            incomes.groupBy { income ->
+                val localDate = income.date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate()
+                YearMonth.from(localDate)
+            }
+            .toSortedMap(compareByDescending { it }) // Trie par YearMonth décroissant
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
         )
 
     /**

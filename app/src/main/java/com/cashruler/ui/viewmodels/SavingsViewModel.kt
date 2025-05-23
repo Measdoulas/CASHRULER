@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.cashruler.data.models.SavingsProject
 import com.cashruler.data.repositories.SavingsRepository
 import com.cashruler.data.repositories.ValidationResult
+import com.cashruler.notifications.NotificationManager // Ajoute cet import
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -16,7 +17,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SavingsViewModel @Inject constructor(
-    private val savingsRepository: SavingsRepository
+    private val savingsRepository: SavingsRepository,
+    private val notificationManager: NotificationManager // Ajoute cette ligne
 ) : ViewModel() {
 
     // États UI
@@ -167,6 +169,21 @@ class SavingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 savingsRepository.addToProjectAmount(projectId, amount)
+                // Après avoir ajouté le montant, vérifie si l'objectif est atteint
+                val project = savingsRepository.getProjectById(projectId).firstOrNull()
+                if (project != null && project.currentAmount >= project.targetAmount) {
+                    // Vérifie aussi qu'on ne notifie pas plusieurs fois pour un objectif déjà signalé comme atteint.
+                    // Pour cela, il faudrait un champ "isGoalAchievedNotified" dans SavingsProject.
+                    // Pour l'instant, on notifie si l'objectif est atteint.
+                    // Une amélioration serait de ne notifier qu'une seule fois.
+                    notificationManager.showSavingsGoalAchieved(
+                        notificationId = projectId.toInt(), // Utilise projectId comme base pour l'ID de notif
+                        projectTitle = project.title,
+                        targetAmount = project.targetAmount
+                    )
+                    // Optionnel: Désactiver les rappels pour ce projet si l'objectif est atteint
+                    // notificationService.cancelSavingsReminder(projectId) // Nécessiterait d'injecter NotificationService
+                }
             } catch (e: Exception) {
                 _error.emit("Erreur lors de l'ajout du montant: ${e.message}")
             }

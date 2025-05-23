@@ -16,8 +16,10 @@ import com.cashruler.data.models.Income
 import com.cashruler.ui.components.*
 import com.cashruler.ui.theme.CashRulerTheme
 import com.cashruler.ui.viewmodels.IncomeViewModel
+import java.time.YearMonth // Ajouté
+import java.time.format.TextStyle // Ajouté
 import java.util.*
-import java.text.SimpleDateFormat
+// import java.text.SimpleDateFormat // Peut être retiré si on utilise YearMonth pour l'affichage
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -29,7 +31,8 @@ fun IncomeScreen(
     modifier: Modifier = Modifier,
     viewModel: IncomeViewModel = hiltViewModel()
 ) {
-    val incomes by viewModel.allIncomes.collectAsState()
+    val incomes by viewModel.allIncomes.collectAsState() // Conservé pour les statistiques
+    val groupedIncomesFromVm by viewModel.incomesGroupedByMonth.collectAsState() // Nouveau
     val types by viewModel.allTypes.collectAsState()
     val upcomingIncomes by viewModel.upcomingRecurringIncomes.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -160,41 +163,40 @@ fun IncomeScreen(
                     }
                 }
 
-                // Liste des revenus groupés par mois
-                val dateFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.FRANCE) }
-                val groupedIncomes = remember(incomes, selectedType) {
-                    incomes
-                        .filter { income -> selectedType?.let { it == income.type } ?: true }
-                        .groupBy { income ->
-                            val calendar = Calendar.getInstance().apply { time = income.date }
-                            calendar.set(Calendar.DAY_OF_MONTH, 1)
-                            calendar.time
-                        }
-                        .toSortedMap(compareByDescending { it })
-                }
-
-                groupedIncomes.forEach { (month, monthIncomes) ->
-                    stickyHeader {
-                        Surface(
-                            color = MaterialTheme.colorScheme.background,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            ListSection(
-                                title = dateFormat.format(month).replaceFirstChar { it.uppercase() },
-                                modifier = Modifier.padding(top = 16.dp)
-                            )
+                // Liste des revenus groupés par mois depuis le ViewModel
+                groupedIncomesFromVm.forEach { (yearMonth, monthIncomes) ->
+                    // Filtrage des revenus du mois par selectedType
+                    val filteredMonthIncomes = remember(monthIncomes, selectedType) {
+                        if (selectedType == null) {
+                            monthIncomes
+                        } else {
+                            monthIncomes.filter { it.type == selectedType }
                         }
                     }
 
-                    items(
-                        items = monthIncomes,
-                        key = { it.id }
-                    ) { income ->
-                        IncomeListItem(
-                            income = income,
-                            onClick = { onNavigateToEditIncome(income.id) },
-                            onDelete = { showDeleteDialog = income }
-                        )
+                    if (filteredMonthIncomes.isNotEmpty()) { // N'affiche le header que si y'a des revenus après filtrage
+                        stickyHeader {
+                            Surface(
+                                color = MaterialTheme.colorScheme.background, // Adapte selon ton thème
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                ListSection( // Ou Text simple pour le header du mois
+                                    title = "${yearMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${yearMonth.year}",
+                                    modifier = Modifier.padding(top = 16.dp, start = 16.dp, end = 16.dp) // Ajuste padding
+                                )
+                            }
+                        }
+
+                        items(
+                            items = filteredMonthIncomes, // Utilise la liste filtrée
+                            key = { income -> income.id }
+                        ) { income ->
+                            IncomeListItem(
+                                income = income,
+                                onClick = { onNavigateToEditIncome(income.id) },
+                                onDelete = { showDeleteDialog = income }
+                            )
+                        }
                     }
                 }
 

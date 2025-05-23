@@ -25,7 +25,10 @@ class BootReceiver : BroadcastReceiver() {
     lateinit var settingsRepository: SettingsRepository
 
     @Inject
-    lateinit var notificationManager: NotificationManager
+    lateinit var notificationManager: NotificationManager // Peut être conservé si utilisé pour les notifications d'épargne
+
+    @Inject
+    lateinit var notificationService: NotificationService // Ajoute cette ligne
 
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
 
@@ -46,19 +49,35 @@ class BootReceiver : BroadcastReceiver() {
 
         // Restaurer les notifications des limites de dépenses
         if (settingsRepository.getLimitsNotificationsEnabled()) {
-            val limits = spendingLimitRepository.getAllActiveLimits()
+            val limits = spendingLimitRepository.getAllActiveLimits() // Fonction d'extension existante
             limits.forEach { limit ->
-                notificationManager.setupLimitAlerts(limit)
+                // Vérifie si les notifications sont activées pour CETTE limite spécifique
+                // et si la limite est active (déjà fait par getAllActiveLimits mais une double vérification ne nuit pas)
+                if (limit.enableNotifications && limit.isActive) { // Assure-toi que SpendingLimit a bien ces champs
+                    notificationService.scheduleLimitCheck(limit.id)
+                }
             }
         }
 
         // Restaurer les notifications des projets d'épargne
         if (settingsRepository.getSavingsNotificationsEnabled()) {
-            val projects = savingsRepository.getActiveProjects()
+            val projects = savingsRepository.getActiveProjects() // Fonction d'extension existante
             projects.forEach { project ->
-                notificationManager.setupSavingsReminders(project)
+                // Vérifie si le projet a une fréquence d'épargne définie
+                project.savingFrequency?.let { intervalDays ->
+                    if (intervalDays > 0) { // Assure un intervalle valide
+                        notificationService.scheduleSavingsReminder(project.id, intervalDays)
+                    }
+                }
             }
         }
+
+        // Restaurer les rappels de dépenses
+        // Supposons que settingsRepository.getExpenseRemindersEnabled() renverrait true
+        // ou que nous planifions inconditionnellement pour l'instant.
+        // if (settingsRepository.getExpenseRemindersEnabled()) {
+        notificationService.scheduleExpenseReminders()
+        // }
     }
 }
 
