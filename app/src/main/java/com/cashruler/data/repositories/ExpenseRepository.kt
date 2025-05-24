@@ -174,48 +174,21 @@ class ExpenseRepository @Inject constructor(
     }
 
     /**
-     * Calcule la prochaine date de rappel pour une dépense récurrente.
-     * S'inspire de IncomeRepository.calculateNextOccurrence.
+     * Calcule la prochaine date de génération pour une dépense récurrente.
+     * Prend une date de base et une fréquence, et retourne la date de base + fréquence.
      */
-    fun calculateNextReminderDate(expense: Expense): Date? {
-        if (!expense.isRecurring || expense.recurringFrequency == null || expense.recurringFrequency <= 0) {
-            return null
-        }
-
+    fun calculateNextGenerationDate(baseDate: Date, recurringFrequency: Int): Date {
         val calendar = java.util.Calendar.getInstance()
-        // Utilise expense.date comme date de base pour la première récurrence.
-        // Si nextReminderDate existe déjà, on pourrait l'utiliser comme base si plus pertinent,
-        // mais pour un calcul générique de "prochaine date", la date de la dépense est un bon point de départ.
-        calendar.time = expense.date
-
-        val today = java.util.Calendar.getInstance()
-        // Si la date de base de la dépense est dans le futur, le premier rappel sera à cette date + fréquence
-        // Sinon, on avance par intervalle de fréquence jusqu'à dépasser "aujourd'hui".
-        
-        // Remet à zéro l'heure, minute, seconde pour 'today' pour comparer uniquement les dates
-        today.set(java.util.Calendar.HOUR_OF_DAY, 0)
-        today.set(java.util.Calendar.MINUTE, 0)
-        today.set(java.util.Calendar.SECOND, 0)
-        today.set(java.util.Calendar.MILLISECOND, 0)
-
-        // Si la date de la dépense est dans le futur, le premier rappel est cette date + fréquence
-        // (ou juste la date de la dépense si on veut un rappel le jour même de la première occurrence)
-        // La logique ici est de trouver la *prochaine* date de rappel *après* la date de la dépense
-        // qui est aujourd'hui ou dans le futur.
-
-        while (calendar.time.before(today.time)) {
-            calendar.add(java.util.Calendar.DAY_OF_YEAR, expense.recurringFrequency)
-        }
-        // À ce stade, calendar.time est la première date de rappel qui est aujourd'hui ou dans le futur,
-        // basée sur la date de la dépense et sa fréquence.
+        calendar.time = baseDate
+        calendar.add(java.util.Calendar.DAY_OF_YEAR, recurringFrequency)
         return calendar.time
     }
 
     /**
-     * Récupère les dépenses récurrentes dont la prochaine date de rappel est avant ou égale à untilDate.
+     * Récupère les dépenses récurrentes dues (nextGenerationDate <= currentDate).
      */
-    suspend fun getUpcomingRecurringExpensesForReminderList(untilDate: Date): List<Expense> = withContext(dispatcher) {
-        expenseDao.getUpcomingRecurringExpensesForReminderList(untilDate)
+    suspend fun getDueRecurringExpenses(currentDate: Date): List<Expense> = withContext(dispatcher) {
+        expenseDao.getDueRecurringExpenses(currentDate)
     }
 }
 

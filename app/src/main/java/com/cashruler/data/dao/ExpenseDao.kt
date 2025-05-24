@@ -117,8 +117,9 @@ interface ExpenseDao {
     fun getAllCategories(): Flow<List<String>>
 
     /**
-     * Récupère les dépenses récurrentes dont la prochaine date de rappel est avant ou égale à untilDate.
+     * Récupère les dépenses récurrentes dont la prochaine date de génération est avant ou égale à currentDate,
+     * triées par la prochaine date de génération.
      */
-    @Query("SELECT * FROM expenses WHERE isRecurring = 1 AND nextReminderDate IS NOT NULL AND nextReminderDate <= :untilDate")
-    fun getUpcomingRecurringExpensesForReminderList(untilDate: Date): List<Expense>
+    @Query("SELECT * FROM expenses WHERE isRecurring = 1 AND nextGenerationDate IS NOT NULL AND nextGenerationDate <= :currentDate ORDER BY nextGenerationDate ASC")
+    fun getDueRecurringExpenses(currentDate: Date): List<Expense>
 }

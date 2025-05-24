@@ -148,10 +148,15 @@ class ExpenseViewModel @Inject constructor(
                 attachmentUri = formState.attachmentUri,
                 spendingLimitId = formState.spendingLimitId
             )
-            if (expense.isRecurring) {
+            if (expense.isRecurring && expense.recurringFrequency != null && expense.recurringFrequency!! > 0) {
                 expense = expense.copy(
-                    nextReminderDate = expenseRepository.calculateNextReminderDate(expense)
+                    nextGenerationDate = expenseRepository.calculateNextGenerationDate(
+                        baseDate = expense.date,
+                        recurringFrequency = expense.recurringFrequency!!
+                    )
                 )
+            } else {
+                expense = expense.copy(nextGenerationDate = null)
             }
             handleExpense(expense)
         }.invokeOnCompletion { _isLoading.value = false }
@@ -183,10 +188,15 @@ class ExpenseViewModel @Inject constructor(
                 attachmentUri = formState.attachmentUri,
                 spendingLimitId = formState.spendingLimitId
             )
-            if (expense.isRecurring) {
+            if (expense.isRecurring && expense.recurringFrequency != null && expense.recurringFrequency!! > 0) {
                 expense = expense.copy(
-                    nextReminderDate = expenseRepository.calculateNextReminderDate(expense)
+                    nextGenerationDate = expenseRepository.calculateNextGenerationDate(
+                        baseDate = expense.date,
+                        recurringFrequency = expense.recurringFrequency!!
+                    )
                 )
+            } else {
+                expense = expense.copy(nextGenerationDate = null)
             }
             handleExpense(expense, id)
         }.invokeOnCompletion { _isLoading.value = false }

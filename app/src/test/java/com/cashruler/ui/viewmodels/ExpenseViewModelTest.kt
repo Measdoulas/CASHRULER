@@ -92,14 +92,16 @@ class ExpenseViewModelTest {
     }
 
     @Test
-    fun `addExpense success case`() = runTest(testDispatcher) {
-        val validExpenseForm = ExpenseFormState(amount = 100.0, description = "Dinner", category = "Food", date = Date(), spendingLimitId = 1L)
+    fun `addExpense success case non-recurring`() = runTest(testDispatcher) {
+        val testDate = Date()
+        val validExpenseForm = ExpenseFormState(amount = 100.0, description = "Dinner", category = "Food", date = testDate, spendingLimitId = 1L, isRecurring = false)
         viewModel.updateFormState { validExpenseForm }
 
         val expenseMatcher = slot<Expense>()
         coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
         coEvery { expenseRepository.addExpense(any()) } returns 1L // Simulate successful add returning an ID
         coEvery { spendingLimitRepository.addToSpentAmount(1L, 100.0) } just Runs
+        // Pas besoin de mocker calculateNextGenerationDate car isRecurring = false
 
         viewModel.addExpense()
 
@@ -110,6 +112,41 @@ class ExpenseViewModelTest {
             coVerify { expenseRepository.addExpense(expenseMatcher.captured) }
             coVerify { spendingLimitRepository.addToSpentAmount(1L, 100.0) }
             assertEquals("Dinner", expenseMatcher.captured.description)
+            assertNull(expenseMatcher.captured.nextGenerationDate) // Vérifie que c'est null pour non-récurrent
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `addExpense success case recurring`() = runTest(testDispatcher) {
+        val testDate = Date()
+        val frequency = 7
+        // Calcule la date attendue exactement comme le ferait la méthode du repository
+        val expectedNextGenDate = java.util.Calendar.getInstance().apply {
+            time = testDate
+            add(java.util.Calendar.DAY_OF_YEAR, frequency)
+        }.time
+
+        val validExpenseForm = ExpenseFormState(
+            amount = 200.0, description = "Weekly Subscription", category = "Software", 
+            date = testDate, isRecurring = true, recurringFrequency = frequency
+        )
+        viewModel.updateFormState { validExpenseForm }
+
+        val expenseMatcher = slot<Expense>()
+        coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
+        coEvery { expenseRepository.addExpense(any()) } returns 2L
+        // Mock le calcul de la date de prochaine génération, en s'assurant que les arguments correspondent
+        coEvery { expenseRepository.calculateNextGenerationDate(testDate, frequency) } returns expectedNextGenDate
+
+        viewModel.addExpense()
+
+        viewModel.uiState.test {
+            val emittedState = awaitItem()
+            assertTrue(emittedState.isSuccess)
+            coVerify { expenseRepository.addExpense(expenseMatcher.captured) }
+            assertEquals("Weekly Subscription", expenseMatcher.captured.description)
+            assertEquals(expectedNextGenDate.time / 1000, expenseMatcher.captured.nextGenerationDate?.time?.div(1000))
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -144,15 +181,19 @@ class ExpenseViewModelTest {
     }
     
     @Test
-    fun `updateExpense success case`() = runTest(testDispatcher) {
+    fun `updateExpense success case non-recurring`() = runTest(testDispatcher) {
         val expenseId = 1L
-        val updatedForm = ExpenseFormState(amount = 150.0, description = "Updated Dinner", category = "Food")
+        val testDate = Date()
+        val updatedForm = ExpenseFormState(
+            amount = 150.0, description = "Updated Dinner", category = "Food", 
+            date = testDate, isRecurring = false
+        )
         viewModel.updateFormState { updatedForm }
 
         val expenseMatcher = slot<Expense>()
         coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
         coEvery { expenseRepository.updateExpense(any()) } just Runs
-        // Assuming no change to spendingLimit on update for simplicity, or mock it if logic exists
+        // Pas de mock pour calculateNextGenerationDate
 
         viewModel.updateExpense(expenseId)
 
@@ -163,6 +204,43 @@ class ExpenseViewModelTest {
             coVerify { expenseRepository.updateExpense(expenseMatcher.captured) }
             assertEquals(expenseId, expenseMatcher.captured.id)
             assertEquals("Updated Dinner", expenseMatcher.captured.description)
+            assertNull(expenseMatcher.captured.nextGenerationDate) // Vérifie que c'est null
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `updateExpense success case recurring`() = runTest(testDispatcher) {
+        val expenseId = 2L
+        val testDate = Date()
+        val frequency = 14
+        // Calcule la date attendue exactement comme le ferait la méthode du repository
+        val expectedNextGenDate = java.util.Calendar.getInstance().apply {
+            time = testDate
+            add(java.util.Calendar.DAY_OF_YEAR, frequency)
+        }.time
+        
+        val updatedForm = ExpenseFormState(
+            amount = 250.0, description = "Updated Subscription", category = "Service",
+            date = testDate, isRecurring = true, recurringFrequency = frequency
+        )
+        viewModel.updateFormState { updatedForm }
+
+        val expenseMatcher = slot<Expense>()
+        coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
+        coEvery { expenseRepository.updateExpense(any()) } just Runs
+        // Mock le calcul de la date de prochaine génération, en s'assurant que les arguments correspondent
+        coEvery { expenseRepository.calculateNextGenerationDate(testDate, frequency) } returns expectedNextGenDate
+        
+        viewModel.updateExpense(expenseId)
+
+        viewModel.uiState.test {
+            val emittedState = awaitItem()
+            assertTrue(emittedState.isSuccess)
+            coVerify { expenseRepository.updateExpense(expenseMatcher.captured) }
+            assertEquals(expenseId, expenseMatcher.captured.id)
+            assertEquals("Updated Subscription", expenseMatcher.captured.description)
+            assertEquals(expectedNextGenDate.time / 1000, expenseMatcher.captured.nextGenerationDate?.time?.div(1000))
             cancelAndIgnoreRemainingEvents()
         }
     }

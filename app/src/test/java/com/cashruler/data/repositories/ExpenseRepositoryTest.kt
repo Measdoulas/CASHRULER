@@ -15,13 +15,16 @@ import kotlin.test.assertNotNull
 
 class ExpenseRepositoryTest {
 
-    private lateinit var dao: ExpenseDao
+    private lateinit var expenseDao: ExpenseDao // Renommé pour clarté
+    private lateinit var categoryDao: com.cashruler.data.dao.CategoryDao // Ajouté
     private lateinit var repository: ExpenseRepository
+    private val testDispatcher = kotlinx.coroutines.test.UnconfinedTestDispatcher() // Ajouté pour withContext
 
     @Before
     fun setup() {
-        dao = mockk()
-        repository = ExpenseRepository(dao)
+        expenseDao = mockk()
+        categoryDao = mockk(relaxed = true) // Relaxed mock pour CategoryDao car non central à ces tests
+        repository = ExpenseRepository(expenseDao, categoryDao, testDispatcher) // Modifié
     }
 
     @Test
@@ -152,12 +155,97 @@ class ExpenseRepositoryTest {
         amount: Double = 100.0,
         title: String = "Test Expense",
         category: String = "Food",
-        date: Date = Date()
+        date: Date = Date(),
+        isRecurring: Boolean = false,
+        recurringFrequency: Int? = null,
+        nextGenerationDate: Date? = null
     ) = Expense(
         id = id,
         amount = amount,
-        title = title,
+        description = title, // Note: Le modèle Expense utilise 'description' et non 'title'
         category = category,
-        date = date
+        date = date,
+        isRecurring = isRecurring,
+        recurringFrequency = recurringFrequency,
+        nextGenerationDate = nextGenerationDate
     )
+
+    // Nouveaux tests pour calculateNextGenerationDate
+    @Test
+    fun `calculateNextGenerationDate returns correct future date`() {
+        val calendar = java.util.Calendar.getInstance()
+        val baseDate = calendar.time
+        val frequency = 7 // 7 jours
+
+        calendar.add(java.util.Calendar.DAY_OF_YEAR, frequency)
+        val expectedDate = calendar.time
+
+        val result = repository.calculateNextGenerationDate(baseDate, frequency)
+        assertEquals(expectedDate.time / 1000, result.time / 1000) // Compare en secondes pour éviter diff millisecondes
+    }
+    
+    @Test
+    fun `calculateNextGenerationDate handles month and year changes`() {
+        val calendar = java.util.Calendar.getInstance()
+        // Met la date au 28 Décembre 2023
+        calendar.set(2023, java.util.Calendar.DECEMBER, 28)
+        val baseDate = calendar.time
+        val frequency = 5 // 5 jours
+
+        // La date attendue est le 2 Janvier 2024
+        val expectedCalendar = java.util.Calendar.getInstance()
+        expectedCalendar.set(2024, java.util.Calendar.JANUARY, 2)
+        val expectedDate = expectedCalendar.time
+        
+        val result = repository.calculateNextGenerationDate(baseDate, frequency)
+        
+        val resultCal = java.util.Calendar.getInstance().apply { time = result }
+        val expectedCal = java.util.Calendar.getInstance().apply { time = expectedDate }
+
+        assertEquals(expectedCal.get(java.util.Calendar.YEAR), resultCal.get(java.util.Calendar.YEAR))
+        assertEquals(expectedCal.get(java.util.Calendar.MONTH), resultCal.get(java.util.Calendar.MONTH))
+        assertEquals(expectedCal.get(java.util.Calendar.DAY_OF_MONTH), resultCal.get(java.util.Calendar.DAY_OF_MONTH))
+    }
+
+    // Nouveaux tests pour getDueRecurringExpenses
+    @Test
+    fun `getDueRecurringExpenses returns correct expenses from dao`() = runTest {
+        val calendar = java.util.Calendar.getInstance()
+        val currentDate = calendar.time
+        
+        calendar.add(java.util.Calendar.DAY_OF_YEAR, -1) // Hier
+        val pastDate = calendar.time
+        calendar.add(java.util.Calendar.DAY_OF_YEAR, 2) // Demain (basé sur hier + 2 = demain par rapport à aujourd'hui)
+        val futureDate = calendar.time
+
+        val dueExpense = createExpense(1, isRecurring = true, nextGenerationDate = pastDate)
+        val dueTodayExpense = createExpense(2, isRecurring = true, nextGenerationDate = currentDate)
+        val futureExpense = createExpense(3, isRecurring = true, nextGenerationDate = futureDate)
+        val nonRecurringExpense = createExpense(4, isRecurring = false, nextGenerationDate = pastDate)
+        val nullDateExpense = createExpense(5, isRecurring = true, nextGenerationDate = null)
+
+        val expectedExpenses = listOf(dueExpense, dueTodayExpense)
+        
+        // Mock la réponse du DAO
+        coEvery { expenseDao.getDueRecurringExpenses(currentDate) } returns expectedExpenses
+
+        // Appelle la méthode du repository
+        val result = repository.getDueRecurringExpenses(currentDate)
+
+        // Vérifie le résultat
+        assertEquals(expectedExpenses.size, result.size)
+        assertEquals(expectedExpenses, result)
+        coVerify { expenseDao.getDueRecurringExpenses(currentDate) }
+    }
+
+    @Test
+    fun `getDueRecurringExpenses returns empty list when no expenses are due`() = runTest {
+        val currentDate = Date()
+        coEvery { expenseDao.getDueRecurringExpenses(currentDate) } returns emptyList()
+
+        val result = repository.getDueRecurringExpenses(currentDate)
+
+        assertTrue(result.isEmpty())
+        coVerify { expenseDao.getDueRecurringExpenses(currentDate) }
+    }
 }

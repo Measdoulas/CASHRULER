@@ -76,8 +76,12 @@ class BootReceiver : BroadcastReceiver() {
         // Supposons que settingsRepository.getExpenseRemindersEnabled() renverrait true
         // ou que nous planifions inconditionnellement pour l'instant.
         // if (settingsRepository.getExpenseRemindersEnabled()) {
-        notificationService.scheduleExpenseReminders()
+        // notificationService.scheduleExpenseReminders() // Supprimé
         // }
+
+        // Restaurer la génération des dépenses récurrentes
+        notificationService.scheduleGenerateRecurringExpensesWorker() 
+        android.util.Log.d("BootReceiver", "Scheduled GenerateRecurringExpensesWorker.")
     }
 }
 
