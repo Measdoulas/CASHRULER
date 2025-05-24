@@ -38,9 +38,10 @@ class SpendingLimitRepository @Inject constructor(
 
     /**
      * Ajoute une nouvelle limite de dépenses
+     * @return l'ID de la limite créée
      */
-    suspend fun addLimit(limit: SpendingLimit) = withContext(dispatcher) {
-        spendingLimitDao.insert(limit)
+    suspend fun addLimit(limit: SpendingLimit): Long = withContext(dispatcher) {
+        return@withContext spendingLimitDao.insert(limit)
     }
 
     /**

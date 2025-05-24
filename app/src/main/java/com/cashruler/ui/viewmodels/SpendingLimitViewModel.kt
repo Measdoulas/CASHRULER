@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.cashruler.data.models.SpendingLimit
 import com.cashruler.data.repositories.SpendingLimitRepository
 import com.cashruler.data.repositories.ValidationResult
+import com.cashruler.notifications.NotificationService // Ajoute cet import
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -16,7 +17,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SpendingLimitViewModel @Inject constructor(
-    private val spendingLimitRepository: SpendingLimitRepository
+    private val spendingLimitRepository: SpendingLimitRepository,
+    private val notificationService: NotificationService // Ajoute cette ligne
 ) : ViewModel() {
 
     // États UI
@@ -165,10 +167,21 @@ class SpendingLimitViewModel @Inject constructor(
     /**
      * Active/Désactive une limite
      */
-    fun setLimitActive(limitId: Long, isActive: Boolean) {
+    fun setLimitActive(limitId: Long, isActive: Boolean) { // paramètre renommé projectId en limitId mentalement, signature conservée pour l'instant
         viewModelScope.launch {
             try {
-                spendingLimitRepository.setLimitActive(limitId, isActive)
+                // Récupère la limite pour connaître son état enableNotifications
+                val limit = spendingLimitRepository.getLimitById(limitId).first() 
+                if (limit != null) {
+                    spendingLimitRepository.setLimitActive(limitId, isActive)
+                    if (isActive && limit.enableNotifications) {
+                        notificationService.scheduleLimitCheck(limitId)
+                    } else {
+                        notificationService.cancelLimitCheck(limitId)
+                    }
+                } else {
+                    _error.emit("Limite non trouvée pour gérer les notifications.")
+                }
             } catch (e: Exception) {
                 _error.emit("Erreur lors du changement d'état de la limite: ${e.message}")
             }
@@ -214,15 +227,40 @@ class SpendingLimitViewModel @Inject constructor(
   private suspend fun handleLimit(limit: SpendingLimit, id: Long? = null) {
       if (!isFormValid()) {
           _error.emit("Veuillez corriger les erreurs du formulaire")
+          _isLoading.value = false // Assure-toi que isLoading est remis à false
           return
       }
+
+      _isLoading.value = true // Mettre isLoading à true ici, avant le try/catch
       try {
-          if (id != null) {
-              spendingLimitRepository.updateLimit(limit.copy(id = id))
+          var finalLimitId: Long? = id
+          val limitToSave = if (id != null) {
+              limit.copy(id = id)
           } else {
-              spendingLimitRepository.addLimit(limit)
+              limit // Pour un nouveau projet, l'ID sera généré par la DB
           }
-          _uiState.update { it.copy(formState = SpendingLimitFormState(), isSuccess = true) }
+
+          if (id != null) { // Cas de mise à jour
+              spendingLimitRepository.updateLimit(limitToSave)
+          } else { // Cas d'ajout
+              finalLimitId = spendingLimitRepository.addLimit(limitToSave) // Récupère le nouvel ID
+          }
+          // Clear validation errors on success
+          _uiState.update { it.copy(formState = SpendingLimitFormState(), isSuccess = true, validationErrors = emptyMap()) }
+
+
+          // Gestion des notifications avec finalLimitId (qui est maintenant toujours non-nul si succès)
+          // et l'objet limit (l'argument original de handleLimit, qui vient du formulaire)
+          finalLimitId?.let { currentId ->
+              // Utilise 'limit' (l'argument original de handleLimit) car il contient l'état du formulaire
+              // que l'utilisateur vient de soumettre, y compris 'enableNotifications' et 'isActive'.
+              if (limit.isActive && limit.enableNotifications) {
+                  notificationService.scheduleLimitCheck(currentId)
+              } else {
+                  notificationService.cancelLimitCheck(currentId)
+              }
+          }
+
       } catch (e: Exception) {
           val action = if (id != null) "mettre à jour" else "ajouter"
           _error.emit("Erreur lors de l'action de $action la limite: ${e.message}")

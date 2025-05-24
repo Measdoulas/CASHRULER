@@ -115,4 +115,11 @@ interface ExpenseDao {
      */
     @Query("SELECT DISTINCT category FROM expenses ORDER BY category")
     fun getAllCategories(): Flow<List<String>>
+
+    /**
+     * Récupère les dépenses récurrentes dont la prochaine date de génération est avant ou égale à currentDate,
+     * triées par la prochaine date de génération.
+     */
+    @Query("SELECT * FROM expenses WHERE isRecurring = 1 AND nextGenerationDate IS NOT NULL AND nextGenerationDate <= :currentDate ORDER BY nextGenerationDate ASC")
+    fun getDueRecurringExpenses(currentDate: Date): List<Expense>
 }

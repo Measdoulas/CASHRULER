@@ -59,8 +59,11 @@ class NotificationManager @Inject constructor(
                 enableVibration(true)
             }
 
+            // Canal pour les rappels de dépenses (supprimé)
+            // val expenseReminderChannel = NotificationChannel(...)
+
             notificationManager.createNotificationChannels(
-                listOf(spendingLimitChannel, incomeReminderChannel, savingsGoalChannel)
+                listOf(spendingLimitChannel, incomeReminderChannel, savingsGoalChannel) // expenseReminderChannel supprimé
             )
         }
     }
@@ -96,6 +99,40 @@ class NotificationManager @Inject constructor(
             ))
             .setProgress(100, progress, false)
             .setColor(ContextCompat.getColor(context, R.color.warning))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+    }
+
+    fun showSavingsGoalAchieved(
+        notificationId: Int, // Peut être basé sur projectId.toInt()
+        projectTitle: String,
+        targetAmount: Double
+    ) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("screen", "savings_project_details") // Route pour naviguer vers les détails du projet
+            putExtra("projectId", notificationId.toLong()) // Utilise notificationId comme projectId
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId, // Utilise un ID unique pour la notification
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val message = "Félicitations ! Vous avez atteint votre objectif de ${numberFormat.format(targetAmount)} FCFA pour '$projectTitle'."
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_SAVINGS_GOAL) // Utilise le canal existant
+            .setSmallIcon(R.drawable.ic_savings_achieved) // Tu devras ajouter une icône appropriée ic_savings_achieved.xml
+            .setContentTitle("Objectif d'épargne atteint !")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setColor(ContextCompat.getColor(context, R.color.success)) // Utilise une couleur de succès
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
@@ -179,5 +216,8 @@ class NotificationManager @Inject constructor(
         const val CHANNEL_SPENDING_LIMIT = "spending_limit"
         const val CHANNEL_INCOME_REMINDER = "income_reminder"
         const val CHANNEL_SAVINGS_GOAL = "savings_goal"
+        // const val CHANNEL_EXPENSE_REMINDER = "expense_reminder" // Supprimé
     }
+
+    // La méthode showExpenseReminder(...) est supprimée.
 }

@@ -8,6 +8,9 @@ import com.cashruler.data.repositories.ValidationResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
 import java.util.Date
 import javax.inject.Inject
 
@@ -53,6 +56,19 @@ class IncomeViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
+        )
+
+    val incomesGroupedByMonth: StateFlow<Map<YearMonth, List<Income>>> =
+        allIncomes.map { incomes ->
+            incomes.groupBy { income ->
+                val localDate = income.date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate()
+                YearMonth.from(localDate)
+            }
+            .toSortedMap(compareByDescending { it }) // Trie par YearMonth décroissant
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
         )
 
     /**
@@ -270,6 +286,37 @@ class IncomeViewModel @Inject constructor(
             is ValidationResult.Error -> _error.emit(result.errors.joinToString("\n"))
         }
     }
+
+    /**
+     * Ajoute un nouveau type de revenu
+     */
+    fun addNewType(typeName: String) {
+        if (typeName.isBlank()) {
+            viewModelScope.launch {
+                _error.emit("Le nom du type ne peut pas être vide.")
+            }
+            return
+        }
+        // Optionnel : Vérification de l'existence en amont
+        val existingType = allTypes.value.firstOrNull { it.equals(typeName, ignoreCase = true) }
+        if (existingType != null) {
+            viewModelScope.launch {
+                _error.emit("Le type '$existingType' existe déjà.")
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                incomeRepository.addType(typeName)
+                // Optionnel: Sélectionne automatiquement le nouveau type
+                // updateFormState { it.copy(type = typeName) }
+            } catch (e: Exception) {
+                _error.emit("Erreur lors de l'ajout du type: ${e.message}")
+            }
+        }
+    }
+
 private fun createIncomeFromForm(): Income {
     val formState = _uiState.value.formState
     return Income(amount = formState.amount, description = formState.description, type = formState.type, date = formState.date, isRecurring = formState.isRecurring, recurringFrequency = formState.recurringFrequency, isTaxable = formState.isTaxable, taxRate = formState.taxRate, notes = formState.notes.takeIf { it.isNotBlank() }, attachmentUri = formState.attachmentUri)

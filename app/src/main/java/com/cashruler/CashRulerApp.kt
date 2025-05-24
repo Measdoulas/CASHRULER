@@ -7,7 +7,9 @@ import android.content.Context
 import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.cashruler.notifications.workers.GenerateRecurringExpensesWorker // Ajouté
 import com.cashruler.notifications.workers.IncomeReminderWorker
+// import com.cashruler.notifications.workers.ExpenseReminderWorker // Supprimé (sera fait par le worker)
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -80,6 +82,8 @@ class CashRulerApp : MultiDexApplication(), Configuration.Provider {
     private fun scheduleWorkers() {
         // Programme le worker pour les revenus récurrents
         IncomeReminderWorker.schedule(this)
+        // Programme le worker pour la génération des dépenses récurrentes
+        GenerateRecurringExpensesWorker.schedule(this)
     }
 
     companion object {

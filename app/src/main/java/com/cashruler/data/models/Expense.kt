@@ -42,6 +42,7 @@ data class Expense(
      * Null si la dépense n'est pas récurrente
      */
     val recurringFrequency: Int? = null,
+    val nextGenerationDate: Date? = null, // Champ renommé
     
     /**
      * Date de création de l'entrée

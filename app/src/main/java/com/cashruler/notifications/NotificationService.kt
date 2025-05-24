@@ -157,4 +157,12 @@ class NotificationService @Inject constructor(
     fun cancelSavingsReminder(projectId: Long) {
         workManager.cancelUniqueWork("savings_reminder_$projectId")
     }
+
+    fun scheduleExpenseReminders() {
+        ExpenseReminderWorker.schedule(context)
+    }
+
+    fun cancelExpenseReminders() {
+        ExpenseReminderWorker.cancel(context)
+    }
 }

@@ -10,24 +10,26 @@ object Routes {
     const val SETTINGS = "settings"
 
     // Sous-écrans des dépenses
-    const val EXPENSE_FORM = "expense_form"
-    const val EXPENSE_DETAILS = "expense_details/{expenseId}"
+    const val EXPENSE_FORM_NEW = "expense_form_new" // Pour créer une nouvelle dépense
+    const val EXPENSE_DETAILS = "expense_details/{expenseId}" // Pour voir/éditer une dépense existante
     
     fun expenseDetails(expenseId: Long) = "expense_details/$expenseId"
 
     // Sous-écrans des revenus
-    const val INCOME_FORM = "income_form"
-    const val INCOME_DETAILS = "income_details/{incomeId}"
+    const val INCOME_FORM_NEW = "income_form_new" // Pour créer un nouveau revenu
+    const val INCOME_DETAILS = "income_details/{incomeId}" // Pour voir/éditer un revenu existant
     
     fun incomeDetails(incomeId: Long) = "income_details/$incomeId"
 
     // Sous-écrans de l'épargne
-    const val SAVINGS_FORM = "savings_form"
-    const val SAVINGS_PROJECT = "savings_project/{projectId}"
-    const val SAVINGS_TRANSACTION = "savings_transaction/{projectId}"
-    
-    fun savingsProject(projectId: Long) = "savings_project/$projectId"
-    fun savingsTransaction(projectId: Long) = "savings_transaction/$projectId"
+    const val SAVINGS_FORM_NEW = "savings_form_new" // Pour créer un nouveau projet
+    const val SAVINGS_FORM_EDIT = "savings_form_edit/{projectId}" // Pour éditer un projet existant
+    const val SAVINGS_PROJECT_DETAILS = "savings_project_details/{projectId}" // Pour voir les détails d'un projet
+    // SAVINGS_TRANSACTION et savingsTransaction sont supprimés
+
+    fun savingsProjectDetails(projectId: Long) = "savings_project_details/$projectId"
+    fun savingsFormEdit(projectId: Long) = "savings_form_edit/$projectId"
+    // fun savingsTransaction(projectId: Long) = "savings_transaction/$projectId" // Supprimé
 
     // Écrans de paramètres
     const val BACKUP = "backup"

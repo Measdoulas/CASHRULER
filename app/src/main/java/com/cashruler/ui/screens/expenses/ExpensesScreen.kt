@@ -1,15 +1,19 @@
 package com.cashruler.ui.screens.expenses
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.cashruler.data.models.Expense
 import com.cashruler.ui.components.*
 import com.cashruler.ui.viewmodels.ExpenseViewModel
+import java.time.format.TextStyle
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -21,7 +25,7 @@ fun ExpensesScreen(
     modifier: Modifier = Modifier,
     viewModel: ExpenseViewModel = hiltViewModel()
 ) {
-    val expenses by viewModel.allExpenses.collectAsState()
+    val groupedExpenses by viewModel.expensesGroupedByMonth.collectAsState()
     val categories by viewModel.allCategories.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
@@ -62,7 +66,7 @@ fun ExpensesScreen(
     ) { paddingValues ->
         if (isLoading) {
             LoadingState()
-        } else if (expenses.isEmpty()) {
+        } else if (groupedExpenses.isEmpty()) {
             EmptyListMessage(
                 message = "Aucune dépense enregistrée",
                 icon = {
@@ -74,28 +78,41 @@ fun ExpensesScreen(
                 }
             )
         } else {
-            TransactionList(
-                items = expenses,
-                groupBy = { it.date },
-                key = { it.id },
-                modifier = Modifier.padding(paddingValues)
-            ) { expense ->
-                TransactionListItem(
-                    label = expense.description,
-                    amount = -expense.amount,
-                    description = expense.category,
-                    date = expense.date,
-                    isPositiveGood = false,
-                    onClick = { onNavigateToEditExpense(expense.id) },
-                    trailing = {
-                        IconButton(onClick = { showDeleteDialog = expense }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Supprimer"
-                            )
-                        }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+            ) {
+                groupedExpenses.forEach { (yearMonth, expensesInMonth) ->
+                    // En-tête pour le mois/année
+                    item {
+                        Text(
+                            text = "${yearMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${yearMonth.year}",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(16.dp)
+                        )
                     }
-                )
+                    // Liste des dépenses pour ce mois
+                    items(expensesInMonth, key = { expense -> expense.id }) { expense ->
+                        TransactionListItem( // Ton composant existant
+                            label = expense.description,
+                            amount = -expense.amount,
+                            description = expense.category,
+                            date = expense.date,
+                            isPositiveGood = false,
+                            onClick = { onNavigateToEditExpense(expense.id) },
+                            trailing = {
+                                IconButton(onClick = { showDeleteDialog = expense }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Supprimer"
+                                    )
+                                }
+                            }
+                        )
+                        Divider() // Ajoute un séparateur si souhaité
+                    }
+                }
             }
         }
 

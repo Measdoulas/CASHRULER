@@ -22,7 +22,9 @@ fun SavingsFormScreen(
     viewModel: SavingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val formState = uiState.projectFormState
+    // Renommé pour correspondre à la consigne, mais c'est bien uiState.projectFormState du ViewModel
+    val formState = uiState.projectFormState 
+    val validationErrors = uiState.validationErrors // Ajouté pour submitEnabled
     val isLoading by viewModel.isLoading.collectAsState()
 
     var showSuccessMessage by remember { mutableStateOf(false) }
@@ -62,7 +64,7 @@ fun SavingsFormScreen(
             }
         },
         modifier = modifier,
-        submitEnabled = !isLoading && formState.isValid
+        submitEnabled = !isLoading && validationErrors.isEmpty() // Modifié
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -76,9 +78,11 @@ fun SavingsFormScreen(
             OutlinedTextField(
                 value = formState.title,
                 onValueChange = { title ->
-                    viewModel.updateProjectFormState { it.copy(title = title) }
+                    viewModel.updateFormState { it.copy(title = title) }
                 },
                 label = { Text("Titre du projet") },
+                isError = "title" in validationErrors,
+                supportingText = validationErrors["title"]?.let { { Text(it) } },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -87,9 +91,11 @@ fun SavingsFormScreen(
             OutlinedTextField(
                 value = formState.description,
                 onValueChange = { description ->
-                    viewModel.updateProjectFormState { it.copy(description = description) }
+                    viewModel.updateFormState { it.copy(description = description) }
                 },
-                label = { Text("Description") },
+                label = { Text("Description (optionnel)") },
+                 isError = "description" in validationErrors,
+                supportingText = validationErrors["description"]?.let { { Text(it) } },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -98,80 +104,134 @@ fun SavingsFormScreen(
             MoneyInputField(
                 value = formState.targetAmount,
                 onValueChange = { amount ->
-                    viewModel.updateProjectFormState { it.copy(targetAmount = amount) }
+                    viewModel.updateFormState { it.copy(targetAmount = amount) }
                 },
-                label = "Objectif"
+                label = "Objectif d'épargne",
+                isError = "targetAmount" in validationErrors,
+                errorMessage = validationErrors["targetAmount"]
             )
 
-            // Montant initial
-            if (projectId == null) {
-                MoneyInputField(
-                    value = formState.initialAmount,
-                    onValueChange = { amount ->
-                        viewModel.updateProjectFormState { it.copy(initialAmount = amount) }
-                    },
-                    label = "Montant initial"
-                )
+            // Montant actuel (non modifiable ici)
+            Text("Montant actuel: ${com.cashruler.util.formatCurrency(formState.currentAmount)}", style = MaterialTheme.typography.bodyLarge)
+            // Date de début (non modifiable)
+            Text("Date de début: ${java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(formState.startDate)}", style = MaterialTheme.typography.bodyLarge)
+
+
+            // Date Cible
+            DateSelector(
+                date = formState.targetDate ?: Date(), // Fournir une date par défaut si null, ou gérer la logique pour permettre de ne pas en avoir
+                onDateSelected = { date ->
+                    viewModel.updateFormState { it.copy(targetDate = date) }
+                },
+                label = "Date cible (optionnel)",
+                isError = "targetDate" in validationErrors,
+                errorMessage = validationErrors["targetDate"]
+            )
+            // Bouton pour effacer la date cible si elle est optionnelle
+            if (formState.targetDate != null) {
+                TextButton(onClick = { viewModel.updateFormState { it.copy(targetDate = null)} }) {
+                    Text("Effacer la date cible")
+                }
             }
 
-            // Date d'échéance
-            LabeledSwitch(
-                checked = formState.hasDeadline,
-                onCheckedChange = { hasDeadline ->
-                    viewModel.updateProjectFormState { it.copy(hasDeadline = hasDeadline) }
+
+            // Épargne périodique
+            MoneyInputField(
+                value = formState.periodicAmount ?: 0.0,
+                onValueChange = { amount ->
+                    viewModel.updateFormState { it.copy(periodicAmount = amount.takeIf { it > 0 }) }
                 },
-                label = "Date d'échéance"
+                label = "Montant périodique (optionnel)",
+                isError = "periodicAmount" in validationErrors,
+                errorMessage = validationErrors["periodicAmount"]
             )
 
-            if (formState.hasDeadline) {
-                DateSelector(
-                    date = formState.deadline ?: Date(),
-                    onDateSelected = { date ->
-                        viewModel.updateProjectFormState { it.copy(deadline = date) }
-                    },
-                    label = "Date d'échéance"
-                )
-            }
-
-            // Épargne automatique
-            LabeledSwitch(
-                checked = formState.hasAutoSaving,
-                onCheckedChange = { hasAutoSaving ->
-                    viewModel.updateProjectFormState { it.copy(hasAutoSaving = hasAutoSaving) }
-                },
-                label = "Épargne automatique"
-            )
-
-            if (formState.hasAutoSaving) {
-                MoneyInputField(
-                    value = formState.autoSavingAmount ?: 0.0,
-                    onValueChange = { amount ->
-                        viewModel.updateProjectFormState { it.copy(autoSavingAmount = amount) }
-                    },
-                    label = "Montant à épargner"
-                )
-
+            if (formState.periodicAmount != null && formState.periodicAmount > 0) {
                 OutlinedTextField(
-                    value = formState.autoSavingFrequency?.toString() ?: "",
+                    value = formState.savingFrequency?.toString() ?: "",
                     onValueChange = { frequency ->
-                        viewModel.updateProjectFormState {
-                            it.copy(autoSavingFrequency = frequency.toIntOrNull())
+                        viewModel.updateFormState {
+                            it.copy(savingFrequency = frequency.toIntOrNull())
                         }
                     },
-                    label = { Text("Fréquence (jours)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = { Text("Fréquence d'épargne (jours)") },
+                    isError = "savingFrequency" in validationErrors,
+                    supportingText = validationErrors["savingFrequency"]?.let { { Text(it) } },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            // Catégorie
-            CategorySelector(
-                categories = viewModel.allCategories.value,
-                selectedCategory = formState.category,
-                onCategorySelected = { category ->
-                    viewModel.updateProjectFormState { it.copy(category = category) }
+            // Priorité
+            OutlinedTextField(
+                value = formState.priority.toString(),
+                onValueChange = { priority ->
+                    viewModel.updateFormState { it.copy(priority = priority.toIntOrNull() ?: 0) }
                 },
-                label = "Catégorie"
+                label = { Text("Priorité (0 = faible)") },
+                isError = "priority" in validationErrors,
+                supportingText = validationErrors["priority"]?.let { { Text(it) } },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Icône
+            var expandedIconSelector by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = expandedIconSelector,
+                onExpandedChange = { expandedIconSelector = it }
+            ) {
+                OutlinedTextField(
+                    value = formState.icon ?: "Aucune icône",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Icône (optionnel)") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIconSelector) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expandedIconSelector,
+                    onDismissRequest = { expandedIconSelector = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Aucune icône") },
+                        onClick = {
+                            viewModel.updateFormState { it.copy(icon = null) }
+                            expandedIconSelector = false
+                        }
+                    )
+                    com.cashruler.data.models.SavingsProject.AVAILABLE_ICONS.forEach { iconName ->
+                        DropdownMenuItem(
+                            text = { Text(iconName) }, // Afficher l'icône ici serait mieux
+                            onClick = {
+                                viewModel.updateFormState { it.copy(icon = iconName) }
+                                expandedIconSelector = false
+                            }
+                        )
+                    }
+                }
+            }
+            
+            // Notes
+            OutlinedTextField(
+                value = formState.notes,
+                onValueChange = { notes ->
+                    viewModel.updateFormState { it.copy(notes = notes) }
+                },
+                label = { Text("Notes (optionnel)") },
+                isError = "notes" in validationErrors,
+                supportingText = validationErrors["notes"]?.let { { Text(it) } },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Statut Actif
+            LabeledSwitch(
+                checked = formState.isActive,
+                onCheckedChange = { isActive ->
+                    viewModel.updateFormState { it.copy(isActive = isActive) }
+                },
+                label = "Projet actif"
             )
 
             Spacer(modifier = Modifier.height(32.dp))

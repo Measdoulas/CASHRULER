@@ -1,174 +1,407 @@
 package com.cashruler.ui.viewmodels
 
+import app.cash.turbine.test
 import com.cashruler.data.models.Expense
 import com.cashruler.data.repositories.ExpenseRepository
+import com.cashruler.data.repositories.SpendingLimitRepository
+import com.cashruler.data.repositories.ValidationResult
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
 import org.junit.After
+import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import java.util.Date
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@ExperimentalCoroutinesApi
 class ExpenseViewModelTest {
 
-    private lateinit var repository: ExpenseRepository
     private lateinit var viewModel: ExpenseViewModel
-    private lateinit var testDispatcher: TestDispatcher
+    private val expenseRepository: ExpenseRepository = mockk(relaxed = true)
+    private val spendingLimitRepository: SpendingLimitRepository = mockk(relaxed = true)
+    
+    // Using UnconfinedTestDispatcher for immediate execution
+    // For more complex scenarios with coroutine scheduling, StandardTestDispatcher might be preferred.
+    private val testDispatcher = UnconfinedTestDispatcher() 
 
     @Before
-    fun setup() {
-        testDispatcher = StandardTestDispatcher()
+    fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        // Default behaviors for StateFlows exposed directly by the ViewModel or its dependencies
+        coEvery { expenseRepository.getAllExpenses() } returns flowOf(emptyList())
+        coEvery { expenseRepository.getAllCategories() } returns flowOf(listOf("Food", "Transport"))
         
-        repository = mockk()
-        viewModel = ExpenseViewModel(repository)
+        // Initialize ViewModel here after setting up Dispatchers and default mocks
+        viewModel = ExpenseViewModel(expenseRepository, spendingLimitRepository)
     }
+
+    @Test
+    fun `initial uiState is correct`() = runTest(testDispatcher) {
+        val initialState = viewModel.uiState.value
+        assertEquals(ExpenseFormState(), initialState.formState)
+        assertFalse(initialState.isSuccess)
+        assertTrue(initialState.validationErrors.isEmpty())
+    }
+
+    @Test
+    fun `updateFormState updates formState and validationErrors for invalid amount`() = runTest(testDispatcher) {
+        viewModel.updateFormState { it.copy(amount = 0.0, description = "Test", category = "Food") }
+        val uiState = viewModel.uiState.value
+        assertEquals(0.0, uiState.formState.amount, 0.001)
+        assertTrue(uiState.validationErrors.containsKey("amount"))
+    }
+
+    @Test
+    fun `updateFormState updates formState and validationErrors for blank description`() = runTest(testDispatcher) {
+        viewModel.updateFormState { it.copy(amount = 10.0, description = "", category = "Food") }
+        val uiState = viewModel.uiState.value
+        assertEquals("", uiState.formState.description)
+        assertTrue(uiState.validationErrors.containsKey("description"))
+    }
+    
+    @Test
+    fun `updateFormState updates formState and validationErrors for blank category`() = runTest(testDispatcher) {
+        viewModel.updateFormState { it.copy(amount = 10.0, description = "Test", category = "") }
+        val uiState = viewModel.uiState.value
+        assertEquals("", uiState.formState.category)
+        assertTrue(uiState.validationErrors.containsKey("category"))
+    }
+
+    @Test
+    fun `updateFormState updates formState and validationErrors for invalid recurringFrequency`() = runTest(testDispatcher) {
+        viewModel.updateFormState { it.copy(isRecurring = true, recurringFrequency = 0) }
+        assertTrue(viewModel.uiState.value.validationErrors.containsKey("recurringFrequency"))
+        
+        viewModel.updateFormState { it.copy(isRecurring = true, recurringFrequency = 400) }
+        assertTrue(viewModel.uiState.value.validationErrors.containsKey("recurringFrequency"))
+    }
+
+    @Test
+    fun `updateFormState clears validationErrors for valid input`() = runTest(testDispatcher) {
+        // First, create an invalid state
+        viewModel.updateFormState { it.copy(amount = 0.0) }
+        assertTrue(viewModel.uiState.value.validationErrors.isNotEmpty())
+
+        // Then, update to a valid state
+        viewModel.updateFormState { it.copy(amount = 50.0, description = "Valid Desc", category = "Food") }
+        assertTrue(viewModel.uiState.value.validationErrors.isEmpty())
+    }
+
+    @Test
+    fun `addExpense success case non-recurring`() = runTest(testDispatcher) {
+        val testDate = Date()
+        val validExpenseForm = ExpenseFormState(amount = 100.0, description = "Dinner", category = "Food", date = testDate, spendingLimitId = 1L, isRecurring = false)
+        viewModel.updateFormState { validExpenseForm }
+
+        val expenseMatcher = slot<Expense>()
+        coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
+        coEvery { expenseRepository.addExpense(any()) } returns 1L // Simulate successful add returning an ID
+        coEvery { spendingLimitRepository.addToSpentAmount(1L, 100.0) } just Runs
+        // Pas besoin de mocker calculateNextGenerationDate car isRecurring = false
+
+        viewModel.addExpense()
+
+        viewModel.uiState.test {
+            val emittedState = awaitItem() // Current state after addExpense call
+            assertTrue(emittedState.isSuccess)
+            assertEquals(ExpenseFormState(), emittedState.formState) // Form is reset
+            coVerify { expenseRepository.addExpense(expenseMatcher.captured) }
+            coVerify { spendingLimitRepository.addToSpentAmount(1L, 100.0) }
+            assertEquals("Dinner", expenseMatcher.captured.description)
+            assertNull(expenseMatcher.captured.nextGenerationDate) // Vérifie que c'est null pour non-récurrent
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `addExpense success case recurring`() = runTest(testDispatcher) {
+        val testDate = Date()
+        val frequency = 7
+        // Calcule la date attendue exactement comme le ferait la méthode du repository
+        val expectedNextGenDate = java.util.Calendar.getInstance().apply {
+            time = testDate
+            add(java.util.Calendar.DAY_OF_YEAR, frequency)
+        }.time
+
+        val validExpenseForm = ExpenseFormState(
+            amount = 200.0, description = "Weekly Subscription", category = "Software", 
+            date = testDate, isRecurring = true, recurringFrequency = frequency
+        )
+        viewModel.updateFormState { validExpenseForm }
+
+        val expenseMatcher = slot<Expense>()
+        coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
+        coEvery { expenseRepository.addExpense(any()) } returns 2L
+        // Mock le calcul de la date de prochaine génération, en s'assurant que les arguments correspondent
+        coEvery { expenseRepository.calculateNextGenerationDate(testDate, frequency) } returns expectedNextGenDate
+
+        viewModel.addExpense()
+
+        viewModel.uiState.test {
+            val emittedState = awaitItem()
+            assertTrue(emittedState.isSuccess)
+            coVerify { expenseRepository.addExpense(expenseMatcher.captured) }
+            assertEquals("Weekly Subscription", expenseMatcher.captured.description)
+            assertEquals(expectedNextGenDate.time / 1000, expenseMatcher.captured.nextGenerationDate?.time?.div(1000))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `addExpense form validation failure`() = runTest(testDispatcher) {
+        viewModel.updateFormState { it.copy(amount = 0.0) } // Invalid state
+
+        viewModel.error.test {
+            viewModel.addExpense()
+            assertEquals("Veuillez corriger les erreurs du formulaire", awaitItem())
+            coVerify(exactly = 0) { expenseRepository.addExpense(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertFalse(viewModel.uiState.value.isSuccess)
+    }
+
+    @Test
+    fun `addExpense repository validation failure`() = runTest(testDispatcher) {
+        val validExpenseForm = ExpenseFormState(amount = 100.0, description = "Dinner", category = "Food")
+        viewModel.updateFormState { validExpenseForm }
+
+        coEvery { expenseRepository.validateExpense(any()) } returns ValidationResult.Error(listOf("Repo error"))
+
+        viewModel.error.test {
+            viewModel.addExpense()
+            assertEquals("Repo error", awaitItem())
+            coVerify(exactly = 0) { expenseRepository.addExpense(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertFalse(viewModel.uiState.value.isSuccess)
+    }
+    
+    @Test
+    fun `updateExpense success case non-recurring`() = runTest(testDispatcher) {
+        val expenseId = 1L
+        val testDate = Date()
+        val updatedForm = ExpenseFormState(
+            amount = 150.0, description = "Updated Dinner", category = "Food", 
+            date = testDate, isRecurring = false
+        )
+        viewModel.updateFormState { updatedForm }
+
+        val expenseMatcher = slot<Expense>()
+        coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
+        coEvery { expenseRepository.updateExpense(any()) } just Runs
+        // Pas de mock pour calculateNextGenerationDate
+
+        viewModel.updateExpense(expenseId)
+
+        viewModel.uiState.test {
+            val emittedState = awaitItem()
+            assertTrue(emittedState.isSuccess)
+            assertEquals(ExpenseFormState(), emittedState.formState) // Form reset
+            coVerify { expenseRepository.updateExpense(expenseMatcher.captured) }
+            assertEquals(expenseId, expenseMatcher.captured.id)
+            assertEquals("Updated Dinner", expenseMatcher.captured.description)
+            assertNull(expenseMatcher.captured.nextGenerationDate) // Vérifie que c'est null
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `updateExpense success case recurring`() = runTest(testDispatcher) {
+        val expenseId = 2L
+        val testDate = Date()
+        val frequency = 14
+        // Calcule la date attendue exactement comme le ferait la méthode du repository
+        val expectedNextGenDate = java.util.Calendar.getInstance().apply {
+            time = testDate
+            add(java.util.Calendar.DAY_OF_YEAR, frequency)
+        }.time
+        
+        val updatedForm = ExpenseFormState(
+            amount = 250.0, description = "Updated Subscription", category = "Service",
+            date = testDate, isRecurring = true, recurringFrequency = frequency
+        )
+        viewModel.updateFormState { updatedForm }
+
+        val expenseMatcher = slot<Expense>()
+        coEvery { expenseRepository.validateExpense(capture(expenseMatcher)) } returns ValidationResult.Success
+        coEvery { expenseRepository.updateExpense(any()) } just Runs
+        // Mock le calcul de la date de prochaine génération, en s'assurant que les arguments correspondent
+        coEvery { expenseRepository.calculateNextGenerationDate(testDate, frequency) } returns expectedNextGenDate
+        
+        viewModel.updateExpense(expenseId)
+
+        viewModel.uiState.test {
+            val emittedState = awaitItem()
+            assertTrue(emittedState.isSuccess)
+            coVerify { expenseRepository.updateExpense(expenseMatcher.captured) }
+            assertEquals(expenseId, expenseMatcher.captured.id)
+            assertEquals("Updated Subscription", expenseMatcher.captured.description)
+            assertEquals(expectedNextGenDate.time / 1000, expenseMatcher.captured.nextGenerationDate?.time?.div(1000))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `updateExpense form validation failure`() = runTest(testDispatcher) {
+        viewModel.updateFormState { it.copy(amount = 0.0) } // Invalid state
+
+        viewModel.error.test {
+            viewModel.updateExpense(1L)
+            assertEquals("Veuillez corriger les erreurs du formulaire", awaitItem())
+            coVerify(exactly = 0) { expenseRepository.updateExpense(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertFalse(viewModel.uiState.value.isSuccess)
+    }
+
+    @Test
+    fun `updateExpense repository validation failure`() = runTest(testDispatcher) {
+        val validForm = ExpenseFormState(amount = 100.0, description = "Valid", category = "Cat")
+        viewModel.updateFormState { validForm }
+        coEvery { expenseRepository.validateExpense(any()) } returns ValidationResult.Error(listOf("Update repo error"))
+
+        viewModel.error.test {
+            viewModel.updateExpense(1L)
+            assertEquals("Update repo error", awaitItem())
+            coVerify(exactly = 0) { expenseRepository.updateExpense(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertFalse(viewModel.uiState.value.isSuccess)
+    }
+
+    @Test
+    fun `loadExpense updates formState`() = runTest(testDispatcher) {
+        val expenseId = 1L
+        val mockDate = Date()
+        val mockExpense = Expense(id = expenseId, amount = 200.0, description = "Loaded", category = "Misc", date = mockDate)
+        coEvery { expenseRepository.getExpenseById(expenseId) } returns flowOf(mockExpense)
+
+        viewModel.loadExpense(expenseId)
+        
+        val expectedFormState = ExpenseFormState(
+            amount = 200.0,
+            description = "Loaded",
+            category = "Misc",
+            date = mockDate,
+            isRecurring = false, // Default from Expense model
+            recurringFrequency = null, // Default
+            notes = null, // Default
+            attachmentUri = null, // Default
+            spendingLimitId = null // Default
+        )
+        assertEquals(expectedFormState, viewModel.uiState.value.formState)
+    }
+
+    @Test
+    fun `deleteExpense calls repository and updates spending limit`() = runTest(testDispatcher) {
+        val expenseToDelete = Expense(id = 1L, amount = 50.0, description = "Delete", category = "Test", date = Date(), spendingLimitId = 2L)
+        coEvery { expenseRepository.deleteExpense(expenseToDelete) } just Runs
+        coEvery { spendingLimitRepository.addToSpentAmount(2L, -50.0) } just Runs
+
+        viewModel.deleteExpense(expenseToDelete)
+
+        coVerify { expenseRepository.deleteExpense(expenseToDelete) }
+        coVerify { spendingLimitRepository.addToSpentAmount(2L, -50.0) }
+        // Test error emission if delete fails (requires mocking repo to throw exception)
+    }
+    
+    @Test
+    fun `deleteExpense without spendingLimitId calls repository only`() = runTest(testDispatcher) {
+        val expenseToDelete = Expense(id = 1L, amount = 50.0, description = "Delete", category = "Test", date = Date(), spendingLimitId = null)
+        coEvery { expenseRepository.deleteExpense(expenseToDelete) } just Runs
+
+        viewModel.deleteExpense(expenseToDelete)
+
+        coVerify { expenseRepository.deleteExpense(expenseToDelete) }
+        coVerify(exactly = 0) { spendingLimitRepository.addToSpentAmount(any(), any()) }
+    }
+
+    @Test
+    fun `deleteExpense handles repository exception`() = runTest(testDispatcher) {
+        val expenseToDelete = Expense(id = 1L, amount = 50.0, description = "Delete", category = "Test", date = Date())
+        val exceptionMessage = "Database error"
+        coEvery { expenseRepository.deleteExpense(expenseToDelete) } throws RuntimeException(exceptionMessage)
+
+        viewModel.error.test {
+            viewModel.deleteExpense(expenseToDelete)
+            val emittedError = awaitItem()
+            assertTrue(emittedError.contains(exceptionMessage))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+    
+    @Test
+    fun `addNewCategory success`() = runTest(testDispatcher) {
+        val newCategoryName = "New Category"
+        coEvery { expenseRepository.getAllCategories() } returns flowOf(listOf("Food")) // Initial categories
+        coEvery { expenseRepository.addCategory(newCategoryName) } just Runs
+        
+        // Re-initialize viewModel to pick up the new getAllCategories mock for this specific test if needed,
+        // or ensure the existing one is flexible enough (e.g. if it's a MutableStateFlow in the repo mock)
+        // For this test, we assume the initial `coEvery` in `setUp` is sufficient if `allCategories`
+        // in ViewModel is properly collecting from the repo's flow.
+
+        viewModel.addNewCategory(newCategoryName)
+        
+        coVerify { expenseRepository.addCategory(newCategoryName) }
+        // To verify UI update, you might need to mock `expenseRepository.getAllCategories()`
+        // to emit a new list after `addCategory` is called, then test `viewModel.allCategories`.
+        // This depends on how `allCategories` in ViewModel is implemented.
+        // If `allCategories` is a direct `stateIn` from `expenseRepository.getAllCategories()`,
+        // then mocking `expenseRepository.getAllCategories()` to return a new flow or emit to a
+        // BehaviorSubject/StateFlow in the mock repo would be needed for this part of the test.
+        // For simplicity, this test focuses on the call to `addCategory`.
+    }
+
+    @Test
+    fun `addNewCategory blank name emits error`() = runTest(testDispatcher) {
+        viewModel.error.test {
+            viewModel.addNewCategory("  ")
+            assertEquals("Le nom de la catégorie ne peut pas être vide.", awaitItem())
+            coVerify(exactly = 0) { expenseRepository.addCategory(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `addNewCategory existing category emits error`() = runTest(testDispatcher) {
+        val existingCategory = "Food"
+        coEvery { expenseRepository.getAllCategories() } returns flowOf(listOf("Food", "Transport"))
+        // Reinitialize viewModel if the allCategories state was cached internally from a previous call in setUp
+        // viewModel = ExpenseViewModel(expenseRepository, spendingLimitRepository) // Potentially needed
+
+        viewModel.error.test {
+            viewModel.addNewCategory(existingCategory)
+            assertEquals("La catégorie '$existingCategory' existe déjà.", awaitItem())
+            coVerify(exactly = 0) { expenseRepository.addCategory(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+    
+    @Test
+    fun `resetForm resets uiState`() = runTest(testDispatcher) {
+        // Setup some non-default state
+        viewModel.updateFormState { it.copy(amount = 10.0, description = "Test", isSuccess = true) }
+        assertNotEquals(ExpenseFormState(), viewModel.uiState.value.formState)
+        assertTrue(viewModel.uiState.value.isSuccess)
+
+        viewModel.resetForm()
+
+        val finalState = viewModel.uiState.value
+        assertEquals(ExpenseFormState(), finalState.formState)
+        assertFalse(finalState.isSuccess)
+        assertTrue(finalState.validationErrors.isEmpty())
+    }
+
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        // Clear all mocks if necessary, though usually not needed with fresh mocks per test class
+        // clearAllMocks() 
     }
-
-    @Test
-    fun `initial state is Loading`() = runTest {
-        assertIs<ExpenseUiState.Loading>(viewModel.uiState.value)
-    }
-
-    @Test
-    fun `loadExpenses updates state to Success with expenses`() = runTest {
-        // Given
-        val expenses = listOf(createExpense(1), createExpense(2))
-        coEvery { repository.getAllExpenses() } returns flowOf(expenses)
-
-        // When
-        viewModel.loadExpenses()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then
-        val state = viewModel.uiState.value
-        assertIs<ExpenseUiState.Success>(state)
-        assertEquals(expenses, state.expenses)
-    }
-
-    @Test
-    fun `addExpense calls repository and shows success message`() = runTest {
-        // Given
-        val expense = createExpense(1)
-        coEvery { repository.addExpense(expense) } returns Unit
-        var successCalled = false
-        var errorCalled = false
-
-        // When
-        viewModel.addExpense(
-            expense = expense,
-            onSuccess = { successCalled = true },
-            onError = { errorCalled = true }
-        )
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then
-        coVerify { repository.addExpense(expense) }
-        assertEquals(true, successCalled)
-        assertEquals(false, errorCalled)
-    }
-
-    @Test
-    fun `addExpense shows error when repository throws exception`() = runTest {
-        // Given
-        val expense = createExpense(1)
-        coEvery { repository.addExpense(expense) } throws Exception("Error")
-        var successCalled = false
-        var errorCalled = false
-
-        // When
-        viewModel.addExpense(
-            expense = expense,
-            onSuccess = { successCalled = true },
-            onError = { errorCalled = true }
-        )
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then
-        coVerify { repository.addExpense(expense) }
-        assertEquals(false, successCalled)
-        assertEquals(true, errorCalled)
-    }
-
-    @Test
-    fun `updateExpense calls repository and shows success message`() = runTest {
-        // Given
-        val expense = createExpense(1)
-        coEvery { repository.updateExpense(expense) } returns Unit
-        var successCalled = false
-        var errorCalled = false
-
-        // When
-        viewModel.updateExpense(
-            expense = expense,
-            onSuccess = { successCalled = true },
-            onError = { errorCalled = true }
-        )
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then
-        coVerify { repository.updateExpense(expense) }
-        assertEquals(true, successCalled)
-        assertEquals(false, errorCalled)
-    }
-
-    @Test
-    fun `deleteExpense calls repository and shows success message`() = runTest {
-        // Given
-        val expense = createExpense(1)
-        coEvery { repository.deleteExpense(expense) } returns Unit
-        var successCalled = false
-        var errorCalled = false
-
-        // When
-        viewModel.deleteExpense(
-            expense = expense,
-            onSuccess = { successCalled = true },
-            onError = { errorCalled = true }
-        )
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then
-        coVerify { repository.deleteExpense(expense) }
-        assertEquals(true, successCalled)
-        assertEquals(false, errorCalled)
-    }
-
-    @Test
-    fun `getExpenseById returns selected expense`() = runTest {
-        // Given
-        val expense = createExpense(1)
-        coEvery { repository.getExpenseById(1) } returns flowOf(expense)
-
-        // When
-        viewModel.selectExpense(1)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then
-        assertEquals(expense, viewModel.selectedExpense.value)
-    }
-
-    private fun createExpense(
-        id: Long,
-        amount: Double = 100.0,
-        title: String = "Test Expense",
-        category: String = "Food",
-        date: Date = Date()
-    ) = Expense(
-        id = id,
-        amount = amount,
-        title = title,
-        category = category,
-        date = date
-    )
 }

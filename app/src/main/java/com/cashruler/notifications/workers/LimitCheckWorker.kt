@@ -55,19 +55,18 @@ class SavingsReminderWorker @AssistedInject constructor(
         if (projectId == -1L) return Result.failure()
 
         return try {
-            val project = savingsRepository.getProjectById(projectId)
+            val project = savingsRepository.getProjectById(projectId).firstOrNull() // Utilise .firstOrNull() pour un Flow
             if (project != null) {
                 // Vérifier si le projet est toujours actif et nécessite un rappel
-                if (project.isActive() && project.needsContribution()) {
+                if (project.isActive && project.currentAmount < project.targetAmount) { // Utilise les champs directs
                     notificationService.showSavingsReminder(project)
 
                     // Replanifier le prochain rappel selon la fréquence du projet
-                    val intervalDays = when (project.frequency) {
-                        com.cashruler.data.models.SavingsFrequency.DAILY -> 1
-                        com.cashruler.data.models.SavingsFrequency.WEEKLY -> 7
-                        com.cashruler.data.models.SavingsFrequency.MONTHLY -> 30
+                    project.savingFrequency?.let { intervalDays ->
+                        if (intervalDays > 0) {
+                            notificationService.scheduleSavingsReminder(projectId, intervalDays)
+                        }
                     }
-                    notificationService.scheduleSavingsReminder(projectId, intervalDays)
                 }
             }
             Result.success()
