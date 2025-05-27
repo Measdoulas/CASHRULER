@@ -159,24 +159,38 @@ fun SavingsProjectScreen(
                     Text(
                         text = "Historique des Transactions",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
+                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp)
                     )
-                    LazyColumn(
+                    Card( // Wrap LazyColumn in a Card
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .weight(1f) // Allow LazyColumn to take available space
+                            .padding(horizontal = 16.dp)
+                            .weight(1f), // Allow card to take available space
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
-                        items(projectTransactions) { transaction ->
-                            TransactionListItem(transaction = transaction)
-                            HorizontalDivider()
+                        if (projectTransactions.isEmpty() && !isLoading) {
+                             Text(
+                                text = "Aucune transaction pour ce projet.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally)
+                            )
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(), // Fill the card
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                items(projectTransactions) { transaction ->
+                                    TransactionListItem(transaction = transaction)
+                                    // HorizontalDivider removed as items are now Cards
+                                }
+                            }
                         }
                     }
-                } else if (!isLoading) {
+                } else if (!isLoading) { // This handles case where projectTransactions might be null or not yet loaded but not empty
                      Text(
                         text = "Aucune transaction pour ce projet.",
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(16.dp).fillMaxWidth().wrapContentHeight(Alignment.CenterVertically)
                     )
                 }
             }
@@ -298,27 +312,61 @@ fun SavingsProjectScreenPreview() {
 
 @Composable
 fun TransactionListItem(transaction: SavingsTransaction) {
-    Row(
+    val isDeposit = transaction.type == SavingsTransaction.TYPE_DEPOSIT
+    val amountColor = if (isDeposit) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error
+    val icon = if (isDeposit) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward
+    val formattedDate = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(transaction.transactionDate)
+
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 8.dp, vertical = 4.dp), // Padding for each card item
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column {
-            Text(
-                text = transaction.description ?: transaction.type,
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                text = formatDate(transaction.transactionDate),
-                style = MaterialTheme.typography.bodySmall
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp), // Inner padding for card content
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = transaction.description ?: transaction.type,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = formattedDate,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (transaction.description != null && transaction.description != transaction.type) {
+                     Text(
+                        text = "Type: ${transaction.type}", // Show type explicitly if description is different
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = transaction.type,
+                    tint = amountColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = com.cashruler.util.formatCurrency(transaction.amount), // Amount already positive
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = amountColor
+                )
+            }
         }
-        Text(
-            text = "${if (transaction.type == SavingsTransaction.TYPE_DEPOSIT) "+" else "-"}${com.cashruler.util.formatCurrency(transaction.amount)}",
-            style = MaterialTheme.typography.bodyLarge,
-            color = if (transaction.type == SavingsTransaction.TYPE_DEPOSIT) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-        )
     }
 }
 
@@ -330,8 +378,9 @@ fun AmountInputDialog(
     onConfirm: (Double, String) -> Unit // Added description parameter
 ) {
     var amountText by remember { mutableStateOf("") }
-    var descriptionText by remember { mutableStateOf("") } // Added for description
+    var descriptionText by remember { mutableStateOf("") }
     var isAmountError by remember { mutableStateOf(false) }
+    val isAmountValid = remember(amountText) { amountText.toDoubleOrNull()?.let { it > 0 } ?: false }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -355,8 +404,8 @@ fun AmountInputDialog(
                 OutlinedTextField(
                     value = descriptionText,
                     onValueChange = { descriptionText = it },
-                    label = { Text("Description (Optionnel)") },
-                    singleLine = true,
+                    label = { Text("Description (Optionnel)") }, // Label already indicates optional
+                    singleLine = false, // Allow multi-line for description
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -364,13 +413,17 @@ fun AmountInputDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    // Validation is now handled by isAmountValid for button enablement
+                    // Re-check here just in case, or rely on button's enabled state.
                     val amount = amountText.toDoubleOrNull()
-                    if (amount != null && amount > 0) {
-                        onConfirm(amount, descriptionText.ifBlank { title }) // Pass description
+                    if (amount != null && amount > 0) { // This check is technically redundant if button is correctly disabled
+                        onConfirm(amount, descriptionText.ifBlank { title })
                     } else {
-                        isAmountError = true
+                        // Should not happen if button is disabled, but as a safeguard:
+                        isAmountError = true 
                     }
-                }
+                },
+                enabled = isAmountValid // Enable button only if amount is valid
             ) {
                 Text("Confirmer")
             }
