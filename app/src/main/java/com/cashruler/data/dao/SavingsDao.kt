@@ -151,6 +151,12 @@ interface SavingsDao {
      */
     @Query("DELETE FROM savings_projects")
     suspend fun deleteAll()
+
+    /**
+     * Marque un projet comme ayant sa notification d'objectif atteint envoyée
+     */
+    @Query("UPDATE savings_projects SET isGoalAchievedNotified = :notified, updatedAt = :date WHERE id = :projectId")
+    suspend fun markGoalAchievedNotified(projectId: Long, notified: Boolean, date: Date = Date())
 }
 
 /**

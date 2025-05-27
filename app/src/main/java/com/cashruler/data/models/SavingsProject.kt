@@ -82,7 +82,12 @@ data class SavingsProject(
     /**
      * Priorité du projet (plus le chiffre est bas, plus la priorité est haute)
      */
-    val priority: Int = 0
+    val priority: Int = 0,
+    
+    /**
+     * Indique si la notification d'objectif atteint a été envoyée
+     */
+    var isGoalAchievedNotified: Boolean = false
 ) {
     /**
      * Vérifie si le titre est valide

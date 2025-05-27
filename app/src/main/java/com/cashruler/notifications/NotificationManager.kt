@@ -59,11 +59,18 @@ class NotificationManager @Inject constructor(
                 enableVibration(true)
             }
 
-            // Canal pour les rappels de dépenses (supprimé)
-            // val expenseReminderChannel = NotificationChannel(...)
+            // Canal pour les rappels de dépenses
+            val expenseReminderChannel = NotificationChannel(
+                CHANNEL_EXPENSE_REMINDER,
+                "Rappels de dépenses",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifications pour les rappels de dépenses manuelles"
+                enableVibration(true)
+            }
 
             notificationManager.createNotificationChannels(
-                listOf(spendingLimitChannel, incomeReminderChannel, savingsGoalChannel) // expenseReminderChannel supprimé
+                listOf(spendingLimitChannel, incomeReminderChannel, savingsGoalChannel, expenseReminderChannel)
             )
         }
     }
@@ -216,8 +223,40 @@ class NotificationManager @Inject constructor(
         const val CHANNEL_SPENDING_LIMIT = "spending_limit"
         const val CHANNEL_INCOME_REMINDER = "income_reminder"
         const val CHANNEL_SAVINGS_GOAL = "savings_goal"
-        // const val CHANNEL_EXPENSE_REMINDER = "expense_reminder" // Supprimé
+        const val CHANNEL_EXPENSE_REMINDER = "expense_reminder" // Ajouté
     }
 
-    // La méthode showExpenseReminder(...) est supprimée.
+    fun showExpenseReminder(reminder: com.cashruler.data.models.ExpenseReminder) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            // Potentially add extras to navigate to a specific reminder or list
+            // putExtra("screen", Routes.EXPENSE_REMINDERS_LIST)
+            // putExtra("reminderId", reminder.id)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            reminder.id.toInt(), // Use reminder ID for notification ID
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        var contentText = reminder.description
+        reminder.amount?.let {
+            contentText += " - Montant: ${numberFormat.format(it)} FCFA"
+        }
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_EXPENSE_REMINDER)
+            .setSmallIcon(R.drawable.ic_calendar_clock) // Replace with a suitable icon
+            .setContentTitle("Rappel de Dépense")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setColor(ContextCompat.getColor(context, R.color.primary)) // Or another relevant color
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notificationManager.notify(reminder.id.toInt(), notification)
+    }
 }

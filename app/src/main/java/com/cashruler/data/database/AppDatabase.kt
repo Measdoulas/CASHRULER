@@ -20,9 +20,11 @@ import kotlinx.coroutines.launch
         SavingsProject::class,
         SpendingLimit::class,
         CategoryEntity::class, // Ajout de CategoryEntity
-        IncomeTypeEntity::class // Ajout de IncomeTypeEntity
+        IncomeTypeEntity::class, // Ajout de IncomeTypeEntity
+        ExpenseReminder::class, // Ajout de ExpenseReminder
+        SavingsTransaction::class // Ajout de SavingsTransaction
     ],
-    version = 1, // La version devrait être incrémentée si on change le schéma pour la production
+    version = 3, // Version incrémentée
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -33,6 +35,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun spendingLimitDao(): SpendingLimitDao
     abstract fun categoryDao(): CategoryDao // Ajout du DAO pour CategoryEntity
     abstract fun incomeTypeDao(): IncomeTypeDao // Ajout du DAO pour IncomeTypeEntity
+    abstract fun expenseReminderDao(): ExpenseReminderDao // Ajout du DAO pour ExpenseReminder
+    abstract fun savingsTransactionDao(): SavingsTransactionDao // Ajout du DAO pour SavingsTransaction
 
     companion object {
         private const val DATABASE_NAME = "cashruler.db"
@@ -56,7 +60,7 @@ abstract class AppDatabase : RoomDatabase() {
                         }
                     }
                 })
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3) // Ajout des migrations
                 .build()
                 INSTANCE = instance
                 instance
@@ -88,6 +92,48 @@ abstract class AppDatabase : RoomDatabase() {
             // Types de revenus par défaut
             Income.DEFAULT_TYPES.forEach { typeName ->
                 db.incomeTypeDao().insert(IncomeTypeEntity(name = typeName))
+            }
+        }
+
+        // Définition de la migration
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `expense_reminders` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `amount` REAL,
+                        `reminderDate` INTEGER NOT NULL,
+                        `isRecurring` INTEGER NOT NULL DEFAULT 0,
+                        `frequencyDays` INTEGER,
+                        `categoryId` INTEGER,
+                        `notes` TEXT,
+                        `isActive` INTEGER NOT NULL DEFAULT 1,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """)
+                // Add index for categoryId separately as it's not always supported inline in CREATE TABLE with FOREIGN KEY
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_expense_reminders_categoryId` ON `expense_reminders` (`categoryId`)")
+            }
+        }
+
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `savings_transactions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `projectId` INTEGER NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `transactionDate` INTEGER NOT NULL,
+                        `description` TEXT,
+                        `type` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`projectId`) REFERENCES `savings_projects`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_savings_transactions_projectId` ON `savings_transactions` (`projectId`)")
             }
         }
     }

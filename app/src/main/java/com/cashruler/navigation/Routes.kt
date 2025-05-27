@@ -36,4 +36,10 @@ object Routes {
     const val NOTIFICATIONS = "notifications"
     const val PRIVACY = "privacy"
     const val ABOUT = "about"
+
+    // Routes pour les rappels de dépenses
+    const val EXPENSE_REMINDERS_LIST = "expense_reminders_list"
+    const val EXPENSE_REMINDER_FORM_NEW = "expense_reminder_form_new"
+    const val EXPENSE_REMINDER_FORM_EDIT = "expense_reminder_form_edit/{reminderId}"
+    fun expenseReminderEdit(reminderId: Long) = "expense_reminder_form_edit/$reminderId"
 }

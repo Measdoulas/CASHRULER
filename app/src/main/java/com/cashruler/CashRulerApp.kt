@@ -7,9 +7,11 @@ import android.content.Context
 import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.cashruler.notifications.NotificationService // Added
 import com.cashruler.notifications.workers.GenerateRecurringExpensesWorker // Ajouté
 import com.cashruler.notifications.workers.IncomeReminderWorker
-// import com.cashruler.notifications.workers.ExpenseReminderWorker // Supprimé (sera fait par le worker)
+import com.cashruler.notifications.workers.ExpenseReminderWorker // Added
+import com.cashruler.notifications.workers.DailyLimitResetWorker // Added
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -18,6 +20,9 @@ class CashRulerApp : MultiDexApplication(), Configuration.Provider {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject // Added for NotificationService
+    lateinit var notificationService: NotificationService
 
     override fun onCreate() {
         super.onCreate()
@@ -76,6 +81,16 @@ class CashRulerApp : MultiDexApplication(), Configuration.Provider {
                 description = "Notifications liées aux sauvegardes de données"
                 notificationManager.createNotificationChannel(this)
             }
+
+            // Canal pour les rappels de dépenses manuelles
+            NotificationChannel(
+                EXPENSE_REMINDER_CHANNEL_ID, // Make sure this matches NotificationManager's constant
+                "Rappels de Dépenses",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifications pour les rappels de dépenses manuelles"
+                notificationManager.createNotificationChannel(this)
+            }
         }
     }
 
@@ -84,6 +99,10 @@ class CashRulerApp : MultiDexApplication(), Configuration.Provider {
         IncomeReminderWorker.schedule(this)
         // Programme le worker pour la génération des dépenses récurrentes
         GenerateRecurringExpensesWorker.schedule(this)
+        // Programme le worker pour les rappels de dépenses manuelles
+        notificationService.scheduleExpenseReminders() // Changed to use injected service
+        // Programme le worker pour la réinitialisation quotidienne des limites de dépenses
+        DailyLimitResetWorker.schedule(this)
     }
 
     companion object {
@@ -91,5 +110,6 @@ class CashRulerApp : MultiDexApplication(), Configuration.Provider {
         const val SAVINGS_REMINDER_CHANNEL_ID = "savings_reminder_channel"
         const val INCOME_REMINDER_CHANNEL_ID = "income_reminder_channel"
         const val BACKUP_CHANNEL_ID = "backup_channel"
+        const val EXPENSE_REMINDER_CHANNEL_ID = "expense_reminder" // Added, ensure this matches the one in NotificationManager
     }
 }

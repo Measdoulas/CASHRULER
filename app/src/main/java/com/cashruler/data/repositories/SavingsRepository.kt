@@ -10,6 +10,35 @@ import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 
+interface SavingsRepositoryInterface {
+    fun getAllProjects(): Flow<List<SavingsProject>>
+    fun getActiveProjects(): Flow<List<SavingsProject>>
+    fun getProjectById(projectId: Long): Flow<SavingsProject?>
+    suspend fun addProject(project: SavingsProject): Long
+    suspend fun updateProject(project: SavingsProject)
+    suspend fun deleteProject(project: SavingsProject)
+    @Deprecated("Use transaction-based updates instead")
+    suspend fun updateProjectAmount(projectId: Long, amount: Double, date: Date = Date())
+    @Deprecated("Use SavingsTransactionRepository.addTransaction with TYPE_DEPOSIT instead")
+    suspend fun addToProjectAmount(projectId: Long, amount: Double, date: Date = Date())
+    @Deprecated("Use SavingsTransactionRepository.addTransaction with TYPE_WITHDRAWAL instead")
+    suspend fun subtractFromProjectAmount(projectId: Long, amount: Double, date: Date = Date())
+    suspend fun setProjectActive(projectId: Long, isActive: Boolean, date: Date = Date())
+    fun getTotalSavedAmount(): Flow<Double>
+    fun getTotalTargetAmount(): Flow<Double>
+    fun getUpcomingDeadlines(currentDate: Date = Date(), daysAhead: Int = 30): Flow<List<SavingsProject>>
+    fun getOverdueProjects(currentDate: Date = Date()): Flow<List<SavingsProject>>
+    fun getCompletedProjects(): Flow<List<SavingsProject>>
+    // fun getGlobalStatistics(): Flow<SavingsStatistics> // Assuming SavingsStatistics is defined elsewhere or remove if not used
+    fun validateProject(project: SavingsProject): ValidationResult
+    fun isProjectCompleted(project: SavingsProject): Boolean
+    suspend fun getAllProjectsList(): List<SavingsProject>
+    fun calculateNextOccurrence(project: SavingsProject): Date?
+    suspend fun markGoalAchievedNotified(projectId: Long)
+    suspend fun updateProjectCurrentAmount(projectId: Long, newCurrentAmount: Double) // New method
+}
+
+
 /**
  * Repository pour la gestion des projets d'épargne
  */
@@ -17,7 +46,7 @@ import javax.inject.Singleton
 class SavingsRepository @Inject constructor(
     private val savingsDao: SavingsDao,
     @IODispatcher private val dispatcher: CoroutineDispatcher
-) {
+) : SavingsRepositoryInterface {
     /**
      * Récupère tous les projets d'épargne
      */
@@ -197,5 +226,24 @@ class SavingsRepository @Inject constructor(
         if (project.periodicAmount == null || project.savingFrequency == null) return null
 
         return Date(System.currentTimeMillis() + (project.savingFrequency * 24 * 60 * 60 * 1000))
+    }
+
+    /**
+     * Marque un projet comme ayant sa notification d'objectif atteint envoyée
+     */
+    suspend fun markGoalAchievedNotified(projectId: Long) = withContext(dispatcher) {
+        savingsDao.markGoalAchievedNotified(projectId, true)
+    }
+
+    override suspend fun updateProjectCurrentAmount(projectId: Long, newCurrentAmount: Double) = withContext(dispatcher) {
+        val project = savingsDao.getProjectById(projectId).firstOrNull() // Blocking call, consider if DAO should be suspend
+        project?.let {
+            val updatedProject = it.copy(currentAmount = newCurrentAmount, updatedAt = Date())
+            savingsDao.update(updatedProject)
+        } ?: run {
+            // Handle project not found error, e.g., throw exception or log
+            // For now, let's assume this case should ideally not happen if called correctly
+            println("SavingsRepository: Project with ID $projectId not found for updating current amount.")
+        }
     }
 }

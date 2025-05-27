@@ -32,11 +32,11 @@ fun SavingsProjectScreen(
     var showAddFundsDialog by remember { mutableStateOf(false) }
     var showWithdrawFundsDialog by remember { mutableStateOf(false) }
     var showErrorMessage by remember { mutableStateOf<String?>(null) }
+    val projectTransactions by viewModel.currentProjectTransactions.collectAsState() // Added
 
-    // Charge les données du projet
+    // Charge les données du projet et ses transactions
     LaunchedEffect(projectId) {
-        viewModel.loadProject(projectId)
-        // viewModel.loadProjectTransactions(projectId) // Supprimé
+        viewModel.loadProject(projectId) // This will also trigger loading transactions within the ViewModel
     }
 
     // Collecte les messages d'erreur
@@ -154,7 +154,31 @@ fun SavingsProjectScreen(
                         }
                     }
                 }
-                // La liste des transactions est supprimée
+                // Liste des transactions
+                if (projectTransactions.isNotEmpty()) {
+                    Text(
+                        text = "Historique des Transactions",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
+                    )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .weight(1f) // Allow LazyColumn to take available space
+                    ) {
+                        items(projectTransactions) { transaction ->
+                            TransactionListItem(transaction = transaction)
+                            HorizontalDivider()
+                        }
+                    }
+                } else if (!isLoading) {
+                     Text(
+                        text = "Aucune transaction pour ce projet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
             }
         }
 
@@ -204,8 +228,8 @@ fun SavingsProjectScreen(
             AmountInputDialog(
                 title = "Ajouter des fonds",
                 onDismiss = { showAddFundsDialog = false },
-                onConfirm = { amount ->
-                    viewModel.addAmount(projectId, amount)
+                onConfirm = { amount, description -> // Modified to include description
+                    viewModel.addAmount(projectId, amount, description)
                     showAddFundsDialog = false
                     showSuccessMessage = true // Optionnel: message de succès
                 }
@@ -217,8 +241,8 @@ fun SavingsProjectScreen(
             AmountInputDialog(
                 title = "Retirer des fonds",
                 onDismiss = { showWithdrawFundsDialog = false },
-                onConfirm = { amount ->
-                    viewModel.subtractAmount(projectId, amount)
+                onConfirm = { amount, description -> // Modified to include description
+                    viewModel.subtractAmount(projectId, amount, description)
                     showWithdrawFundsDialog = false
                     showSuccessMessage = true // Optionnel: message de succès
                 }
@@ -273,39 +297,78 @@ fun SavingsProjectScreenPreview() {
 }
 
 @Composable
+fun TransactionListItem(transaction: SavingsTransaction) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Text(
+                text = transaction.description ?: transaction.type,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = formatDate(transaction.transactionDate),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Text(
+            text = "${if (transaction.type == SavingsTransaction.TYPE_DEPOSIT) "+" else "-"}${com.cashruler.util.formatCurrency(transaction.amount)}",
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (transaction.type == SavingsTransaction.TYPE_DEPOSIT) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+        )
+    }
+}
+
+
+@Composable
 fun AmountInputDialog(
     title: String,
     onDismiss: () -> Unit,
-    onConfirm: (Double) -> Unit
+    onConfirm: (Double, String) -> Unit // Added description parameter
 ) {
     var amountText by remember { mutableStateOf("") }
-    var isError by remember { mutableStateOf(false) }
+    var descriptionText by remember { mutableStateOf("") } // Added for description
+    var isAmountError by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = amountText,
-                onValueChange = {
-                    amountText = it
-                    isError = false
-                },
-                label = { Text("Montant") },
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                singleLine = true,
-                isError = isError,
-                supportingText = if (isError) { { Text("Veuillez entrer un montant valide.") } } else null
-            )
+            Column {
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = {
+                        amountText = it
+                        isAmountError = false
+                    },
+                    label = { Text("Montant") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    singleLine = true,
+                    isError = isAmountError,
+                    supportingText = if (isAmountError) { { Text("Veuillez entrer un montant valide.") } } else null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = descriptionText,
+                    onValueChange = { descriptionText = it },
+                    label = { Text("Description (Optionnel)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         },
         confirmButton = {
             TextButton(
                 onClick = {
                     val amount = amountText.toDoubleOrNull()
                     if (amount != null && amount > 0) {
-                        onConfirm(amount)
+                        onConfirm(amount, descriptionText.ifBlank { title }) // Pass description
                     } else {
-                        isError = true
+                        isAmountError = true
                     }
                 }
             ) {

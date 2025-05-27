@@ -3,7 +3,9 @@ package com.cashruler.ui.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cashruler.data.models.SavingsProject
+import com.cashruler.data.models.SavingsTransaction // Added
 import com.cashruler.data.repositories.SavingsRepository
+import com.cashruler.data.repositories.SavingsTransactionRepositoryInterface // Added
 import com.cashruler.data.repositories.ValidationResult
 import com.cashruler.notifications.NotificationManager // Ajoute cet import
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,12 +20,17 @@ import javax.inject.Inject
 @HiltViewModel
 class SavingsViewModel @Inject constructor(
     private val savingsRepository: SavingsRepository,
+    private val savingsTransactionRepository: SavingsTransactionRepositoryInterface, // Added
     private val notificationManager: NotificationManager // Ajoute cette ligne
 ) : ViewModel() {
 
     // États UI
     private val _uiState = MutableStateFlow(SavingsUiState())
     val uiState = _uiState.asStateFlow()
+
+    // Transactions for the current project
+    private val _currentProjectTransactions = MutableStateFlow<List<SavingsTransaction>>(emptyList())
+    val currentProjectTransactions = _currentProjectTransactions.asStateFlow()
 
     // État de chargement
     private val _isLoading = MutableStateFlow(false)
@@ -165,26 +172,42 @@ class SavingsViewModel @Inject constructor(
     /**
      * Ajoute un montant à un projet
      */
-    fun addAmount(projectId: Long, amount: Double) {
+    fun addAmount(projectId: Long, amount: Double, description: String = "Deposit") {
         viewModelScope.launch {
+            _isLoading.value = true
             try {
-                savingsRepository.addToProjectAmount(projectId, amount)
-                // Après avoir ajouté le montant, vérifie si l'objectif est atteint
-                val project = savingsRepository.getProjectById(projectId).firstOrNull()
-                if (project != null && project.currentAmount >= project.targetAmount) {
-                    // Vérifie aussi qu'on ne notifie pas plusieurs fois pour un objectif déjà signalé comme atteint.
-                    // Pour cela, il faudrait un champ "isGoalAchievedNotified" dans SavingsProject.
-                    // Pour l'instant, on notifie si l'objectif est atteint.
-                    // Une amélioration serait de ne notifier qu'une seule fois.
-                    notificationManager.showSavingsGoalAchieved(
-                        notificationId = projectId.toInt(), // Utilise projectId comme base pour l'ID de notif
-                        projectTitle = project.title,
-                        targetAmount = project.targetAmount
-                    )
-                    // Optionnel: Désactiver les rappels pour ce projet si l'objectif est atteint
-                    // notificationService.cancelSavingsReminder(projectId) // Nécessiterait d'injecter NotificationService
+                val transaction = SavingsTransaction(
+                    projectId = projectId,
+                    amount = amount, // Ensure positive for deposit logic in repo/DAO if needed, though type handles it
+                    transactionDate = Date(),
+                    type = SavingsTransaction.TYPE_DEPOSIT,
+                    description = description,
+                    createdAt = Date()
+                )
+                savingsTransactionRepository.addTransaction(transaction)
+
+                // Update SavingsProject.currentAmount
+                val newTotal = savingsTransactionRepository.getTotalAmountForProject(projectId)
+                val projectToUpdate = savingsRepository.getProjectById(projectId).firstOrNull()
+                if (projectToUpdate != null) {
+                    val updatedProject = projectToUpdate.copy(currentAmount = newTotal)
+                    savingsRepository.updateProject(updatedProject) // This updates the project in DB
+
+                    // Check for goal achievement after updating currentAmount
+                    if (updatedProject.currentAmount >= updatedProject.targetAmount && !updatedProject.isGoalAchievedNotified) {
+                        notificationManager.showSavingsGoalAchieved(
+                            notificationId = projectId.toInt(),
+                            projectTitle = updatedProject.title,
+                            targetAmount = updatedProject.targetAmount
+                        )
+                        savingsRepository.markGoalAchievedNotified(projectId)
+                    }
                 }
+                 loadTransactionsForProject(projectId) // Refresh transactions list
+                _isLoading.value = false
+                _error.emit("Deposit successful.")
             } catch (e: Exception) {
+                _isLoading.value = false
                 _error.emit("Erreur lors de l'ajout du montant: ${e.message}")
             }
         }
@@ -193,11 +216,33 @@ class SavingsViewModel @Inject constructor(
     /**
      * Retire un montant d'un projet
      */
-    fun subtractAmount(projectId: Long, amount: Double) {
+    fun subtractAmount(projectId: Long, amount: Double, description: String = "Withdrawal") {
         viewModelScope.launch {
+            _isLoading.value = true
             try {
-                savingsRepository.subtractFromProjectAmount(projectId, amount)
-            } catch (e: Exception) {
+                val transaction = SavingsTransaction(
+                    projectId = projectId,
+                    amount = amount, // Ensure positive, type handles direction
+                    transactionDate = Date(),
+                    type = SavingsTransaction.TYPE_WITHDRAWAL,
+                    description = description,
+                    createdAt = Date()
+                )
+                savingsTransactionRepository.addTransaction(transaction)
+
+                // Update SavingsProject.currentAmount
+                val newTotal = savingsTransactionRepository.getTotalAmountForProject(projectId)
+                val projectToUpdate = savingsRepository.getProjectById(projectId).firstOrNull()
+                if (projectToUpdate != null) {
+                     val updatedProject = projectToUpdate.copy(currentAmount = newTotal)
+                    savingsRepository.updateProject(updatedProject)
+                }
+                loadTransactionsForProject(projectId) // Refresh transactions list
+                _isLoading.value = false
+                _error.emit("Withdrawal successful.")
+            } catch (e: Exception)
+            {
+                _isLoading.value = false
                 _error.emit("Erreur lors du retrait du montant: ${e.message}")
             }
         }
@@ -221,23 +266,52 @@ class SavingsViewModel @Inject constructor(
      */
     fun loadProject(id: Long) {
         viewModelScope.launch {
+            _isLoading.value = true
             savingsRepository.getProjectById(id)
                 .filterNotNull()
                 .collect { project ->
-                    _uiState.update { it.copy(formState = SavingsFormState(
-                        title = project.title,
-                        description = project.description,
-                        targetAmount = project.targetAmount,
-                        currentAmount = project.currentAmount,
-                        startDate = project.startDate,
-                        targetDate = project.targetDate,
-                        periodicAmount = project.periodicAmount,
-                        savingFrequency = project.savingFrequency,
-                        isActive = project.isActive,
-                        icon = project.icon,
-                        notes = project.notes,
-                        priority = project.priority
-                    )) }
+                    // Recalculate currentAmount based on transactions when loading project
+                    val calculatedCurrentAmount = savingsTransactionRepository.getTotalAmountForProject(project.id)
+                    val projectWithCorrectedAmount = if (project.currentAmount != calculatedCurrentAmount) {
+                        project.copy(currentAmount = calculatedCurrentAmount)
+                        // Optionally update the project in DB if discrepancy is found and should be corrected
+                        // savingsRepository.updateProject(project.copy(currentAmount = calculatedCurrentAmount))
+                    } else {
+                        project
+                    }
+
+                    _uiState.update {
+                        it.copy(
+                            formState = SavingsFormState(
+                                title = projectWithCorrectedAmount.title,
+                                description = projectWithCorrectedAmount.description,
+                                targetAmount = projectWithCorrectedAmount.targetAmount,
+                                currentAmount = projectWithCorrectedAmount.currentAmount, // Use calculated amount
+                                startDate = projectWithCorrectedAmount.startDate,
+                                targetDate = projectWithCorrectedAmount.targetDate,
+                                periodicAmount = projectWithCorrectedAmount.periodicAmount,
+                                savingFrequency = projectWithCorrectedAmount.savingFrequency,
+                                isActive = projectWithCorrectedAmount.isActive,
+                                icon = projectWithCorrectedAmount.icon,
+                                notes = projectWithCorrectedAmount.notes,
+                                priority = projectWithCorrectedAmount.priority
+                            )
+                        )
+                    }
+                    loadTransactionsForProject(id) // Load transactions after project details are loaded
+                    _isLoading.value = false
+                }
+        }
+    }
+
+    fun loadTransactionsForProject(projectId: Long) {
+        viewModelScope.launch {
+            savingsTransactionRepository.getTransactionsForProject(projectId)
+                .catch { e ->
+                    _error.emit("Failed to load transactions: ${e.message}")
+                }
+                .collect { transactions ->
+                    _currentProjectTransactions.value = transactions
                 }
         }
     }

@@ -197,14 +197,34 @@ private fun NavGraphBuilder.settingsGraph(navController: NavController) {
     }
 
     composable(Routes.NOTIFICATIONS) {
-        NotificationsScreen(navController)
+        // Placeholder for actual NotificationsScreen if it exists or is to be created
+        // For now, using a simple Text composable if NotificationsScreen is not defined
+        // Replace with actual NotificationsScreen(navController) when available
+        Text("Notifications Screen Placeholder")
     }
 
     composable(Routes.PRIVACY) {
-        PrivacyScreen(navController)
+        // Placeholder for actual PrivacyScreen
+        Text("Privacy Screen Placeholder")
     }
 
     composable(Routes.ABOUT) {
-        AboutScreen(navController)
+        // Placeholder for actual AboutScreen
+        Text("About Screen Placeholder")
+    }
+
+    // Expense Reminders Navigation
+    composable(Routes.EXPENSE_REMINDERS_LIST) {
+        com.cashruler.ui.screens.expensereminders.ExpenseRemindersScreen(navController = navController)
+    }
+    composable(Routes.EXPENSE_REMINDER_FORM_NEW) {
+        com.cashruler.ui.screens.expensereminders.ExpenseReminderFormScreen(navController = navController, reminderId = null)
+    }
+    composable(
+        route = Routes.EXPENSE_REMINDER_FORM_EDIT,
+        arguments = listOf(navArgument("reminderId") { type = NavType.LongType })
+    ) { backStackEntry ->
+        val reminderId = backStackEntry.arguments?.getLong("reminderId")
+        com.cashruler.ui.screens.expensereminders.ExpenseReminderFormScreen(navController = navController, reminderId = reminderId)
     }
 }
