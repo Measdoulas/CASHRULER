@@ -42,6 +42,12 @@ sealed class NavigationItem(
         icon = Icons.Default.PieChart
     )
 
+    data object Reminders : NavigationItem( // Added
+        route = Routes.EXPENSE_REMINDERS_LIST,
+        titleResId = R.string.nav_reminders, // Assuming this string resource will be added
+        icon = Icons.Default.NotificationsActive // Or Icons.Filled.NotificationsActive
+    )
+
     data object Settings : NavigationItem(
         route = Routes.SETTINGS,
         titleResId = R.string.nav_settings,
@@ -55,7 +61,8 @@ sealed class NavigationItem(
             Expenses,
             Income,
             Savings,
-            Statistics
+            Statistics,
+            Reminders // Added
         )
 
         val drawerItems = listOf(

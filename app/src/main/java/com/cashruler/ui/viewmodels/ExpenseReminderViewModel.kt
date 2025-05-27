@@ -1,8 +1,11 @@
 package com.cashruler.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cashruler.data.models.CategoryEntity // Added
 import com.cashruler.data.models.ExpenseReminder
+import com.cashruler.data.repositories.CategoryRepositoryInterface // Added
 import com.cashruler.data.repositories.ExpenseReminderRepositoryInterface
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -13,9 +16,9 @@ import javax.inject.Inject
 data class ExpenseReminderFormState(
     val id: Long? = null,
     val description: String = "",
-    val amount: String = "", // Store as String for TextField, convert/validate later
+    val amount: String = "", 
     val reminderDate: Date = Date(),
-    val categoryId: Long? = null, // Or String if using category names directly initially
+    val categoryId: Long? = null, 
     val notes: String = "",
     val isRecurring: Boolean = false,
     val frequencyDays: String = "", // Store as String for TextField
@@ -27,12 +30,21 @@ data class ExpenseReminderUiState(
     val reminders: List<ExpenseReminder> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val validationErrors: Map<String, String> = emptyMap()
+    val validationErrors: Map<String, String> = emptyMap(),
+    val categories: List<CategoryEntity> = emptyList(),
+    val remindersDisplay: List<ExpenseReminderDisplayItem> = emptyList() // Added
+)
+
+// New data class for display
+data class ExpenseReminderDisplayItem(
+    val reminder: ExpenseReminder,
+    val categoryName: String?
 )
 
 @HiltViewModel
 class ExpenseReminderViewModel @Inject constructor(
-    private val repository: ExpenseReminderRepositoryInterface
+    private val expenseReminderRepository: ExpenseReminderRepositoryInterface, 
+    private val categoryRepository: CategoryRepositoryInterface 
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExpenseReminderUiState())
@@ -41,16 +53,37 @@ class ExpenseReminderViewModel @Inject constructor(
     private val _errorEvents = MutableSharedFlow<String>()
     val errorEvents = _errorEvents.asSharedFlow()
 
+    init {
+        loadCategories() // Load categories first
+        loadActiveReminders() 
+    }
+
+    private fun loadCategories() {
+        viewModelScope.launch {
+            try {
+                val categoryList = categoryRepository.getAllCategories() 
+                _uiState.update { it.copy(categories = categoryList, isLoading = false) } // Set isLoading false after categories load
+            } catch (e: Exception) {
+                 _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load categories: ${e.message}")}
+                _errorEvents.emit("Failed to load categories: ${e.message}")
+            }
+        }
+    }
+
     fun loadActiveReminders() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            repository.getActiveReminders()
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) } // Reset error on new load attempt
+            expenseReminderRepository.getActiveReminders()
                 .catch { e ->
                     _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load reminders: ${e.message}") }
                     _errorEvents.emit("Failed to load reminders: ${e.message}")
                 }
                 .collect { reminders ->
-                    _uiState.update { it.copy(isLoading = false, reminders = reminders) }
+                    val displayItems = reminders.map { reminder ->
+                        val categoryName = uiState.value.categories.find { it.id == reminder.categoryId }?.name
+                        ExpenseReminderDisplayItem(reminder, categoryName)
+                    }
+                    _uiState.update { it.copy(isLoading = false, remindersDisplay = displayItems, reminders = reminders) } // Keep original reminders if needed elsewhere
                 }
         }
     }
@@ -97,9 +130,9 @@ class ExpenseReminderViewModel @Inject constructor(
             try {
                 val reminder = ExpenseReminder(
                     description = currentFormState.description,
-                    amount = currentFormState.amount.toDoubleOrNull(), // Amount can be null
+                    amount = currentFormState.amount.toDoubleOrNull(), 
                     reminderDate = currentFormState.reminderDate,
-                    categoryId = currentFormState.categoryId,
+                    categoryId = currentFormState.categoryId, // Already Long?
                     notes = currentFormState.notes.takeIf { it.isNotBlank() },
                     isRecurring = currentFormState.isRecurring,
                     frequencyDays = if (currentFormState.isRecurring) currentFormState.frequencyDays.toIntOrNull() else null,
@@ -107,9 +140,9 @@ class ExpenseReminderViewModel @Inject constructor(
                     createdAt = Date(),
                     updatedAt = Date()
                 )
-                repository.addReminder(reminder)
-                _uiState.update { it.copy(isLoading = false, formState = ExpenseReminderFormState(), validationErrors = emptyMap()) } // Reset form
-                _errorEvents.emit("Reminder added successfully.") // Use event for success message
+                expenseReminderRepository.addReminder(reminder) // Use renamed repository
+                _uiState.update { it.copy(isLoading = false, formState = ExpenseReminderFormState(), validationErrors = emptyMap()) } 
+                _errorEvents.emit("Reminder added successfully.") 
                 loadActiveReminders() // Refresh list
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to add reminder: ${e.message}") }
@@ -141,10 +174,10 @@ class ExpenseReminderViewModel @Inject constructor(
                     frequencyDays = if (currentFormState.isRecurring) currentFormState.frequencyDays.toIntOrNull() else null,
                     isActive = currentFormState.isActive,
                     // createdAt will be preserved from original, updatedAt will be set by repository/DAO
-                    updatedAt = Date() // ViewModel sets it, repo can override
+                    updatedAt = Date() 
                 )
-                repository.updateReminder(reminder)
-                _uiState.update { it.copy(isLoading = false, formState = ExpenseReminderFormState(), validationErrors = emptyMap()) } // Reset form
+                expenseReminderRepository.updateReminder(reminder) // Use renamed repository
+                _uiState.update { it.copy(isLoading = false, formState = ExpenseReminderFormState(), validationErrors = emptyMap()) } 
                  _errorEvents.emit("Reminder updated successfully.")
                 loadActiveReminders() // Refresh list
             } catch (e: Exception) {
@@ -158,7 +191,7 @@ class ExpenseReminderViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
-                repository.deleteReminder(reminder)
+                expenseReminderRepository.deleteReminder(reminder) // Use renamed repository
                 _uiState.update { it.copy(isLoading = false) }
                 _errorEvents.emit("Reminder deleted successfully.")
                 loadActiveReminders() // Refresh list
@@ -173,7 +206,7 @@ class ExpenseReminderViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
-                val reminder = repository.getReminderById(reminderId)
+                val reminder = expenseReminderRepository.getReminderById(reminderId) // Use renamed repository
                 if (reminder != null) {
                     _uiState.update {
                         it.copy(
@@ -206,7 +239,7 @@ class ExpenseReminderViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
-                repository.setReminderActive(reminderId, isActive)
+                expenseReminderRepository.setReminderActive(reminderId, isActive) // Use renamed repository
                 _uiState.update { it.copy(isLoading = false) }
                 _errorEvents.emit("Reminder status updated.")
                 loadActiveReminders() // Refresh list
